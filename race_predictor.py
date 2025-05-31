@@ -325,6 +325,14 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
         Names of the circuit columns that were kept.
     """
 
+    # Ensure all numerical base columns are numeric to avoid object dtypes when
+    # creating the feature matrix used by XGBoost. Missing values are filled with
+    # ``0`` to keep shapes consistent during prediction.
+    for col in base_cols:
+        if col not in full_data.columns:
+            full_data[col] = 0
+        full_data[col] = pd.to_numeric(full_data[col], errors="coerce").fillna(0)
+
     if team_encoder is None:
         team_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
         team_encoded = team_encoder.fit_transform(full_data[['Team']])
