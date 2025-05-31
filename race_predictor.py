@@ -461,8 +461,13 @@ def predict_race(grand_prix):
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
-    team_strength = race_data[race_data['Season'] == 2024].groupby('HistoricalTeam')['Position'].mean().reset_index()
-    team_strength = team_strength.rename(columns={'HistoricalTeam': 'Team', 'Position': 'TeamAvgPosition'})
+    team_strength = (
+        race_data[race_data['Season'] == 2024]
+        .groupby('HistoricalTeam')['Position']
+        .mean()
+        .reset_index()
+        .rename(columns={'Position': 'TeamAvgPosition'})
+    )
     team_recent_quali = race_data.groupby('HistoricalTeam')['QualiPosition'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'QualiPosition': 'TeamRecentQuali'})
     team_recent_finish = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'Position': 'TeamRecentFinish'})
     team_reliability = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).apply(lambda x: (x > 20).sum()).reset_index().rename(columns={'Position': 'TeamReliability'})
