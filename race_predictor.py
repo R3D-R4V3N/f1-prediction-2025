@@ -113,6 +113,48 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
     ]
     return pd.DataFrame(fallback_drivers)
 
+
+def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
+    """Return qualifying results with driver abbreviations and times.
+
+    Parameters
+    ----------
+    year : int
+        Season year.
+    grand_prix : str
+        Grand Prix name.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing ``Abbreviation``, ``GridPosition`` and best lap
+        times from qualifying. ``GridPosition`` corresponds to the official
+        starting grid.
+    """
+    schedule = fastf1.get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
+
+    round_number = int(match.iloc[0]["RoundNumber"])
+    session = fastf1.get_session(year, round_number, "Q")
+    session.load()
+    q_res = session.results[["Abbreviation", "Position", "Q1", "Q2", "Q3"]].copy()
+
+    def _to_seconds(val):
+        if pd.isna(val):
+            return None
+        try:
+            return pd.to_timedelta(val).total_seconds()
+        except Exception:
+            return None
+
+    for col in ["Q1", "Q2", "Q3"]:
+        q_res[col] = q_res[col].apply(_to_seconds)
+    q_res["BestTime"] = q_res[["Q1", "Q2", "Q3"]].min(axis=1)
+    q_res.rename(columns={"Position": "GridPosition"}, inplace=True)
+    return q_res
+
 # Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
 OVERTAKE_DIFFICULTY = {
     'Bahrain Grand Prix': 2,
@@ -508,7 +550,7 @@ def _train_model(features, target, cv):
 
 
 def predict_race(grand_prix, year=2025, export_details=False):
-    seasons = [2022, 2023, 2024]
+    seasons = [2020, 2021, 2022, 2023, 2024]
     race_data = _load_historical_data(seasons)
     race_data = race_data.reset_index(drop=True)
     # Ensure DriverNumber is numeric for consistent merging
@@ -600,6 +642,16 @@ def predict_race(grand_prix, year=2025, export_details=False):
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
     ]
 
+    qual_results = None
+    if year == 2025:
+        try:
+            qual_results = _get_qualifying_results(year, grand_prix)
+            qual_results = qual_results.merge(
+                drivers_df[['Abbreviation', 'FullName', 'Team']], on='Abbreviation', how='left'
+            )
+        except Exception:
+            qual_results = None
+
     for _, d in drivers_df.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
         if exp_count == 0:
@@ -627,8 +679,20 @@ def predict_race(grand_prix, year=2025, export_details=False):
             avg_track = stats['DriverAvgTrackFinish']
             podiums = stats['DriverTrackPodiums']
             dnfs = stats['DriverTrackDNFs']
+
+        if qual_results is not None:
+            qrow = qual_results[qual_results['Abbreviation'] == d['Abbreviation']]
+            if not qrow.empty:
+                grid_pos = int(qrow.iloc[0]['GridPosition'])
+                best_time = qrow.iloc[0]['BestTime']
+            else:
+                grid_pos = np.nan
+                best_time = default_best_q
+        else:
+            grid_pos = np.nan
+            best_time = default_best_q
         pred_rows.append({
-            'GridPosition': np.nan,
+            'GridPosition': grid_pos,
             'Season': year,
             'ExperienceCount': exp_count,
             'TeamAvgPosition': team_avg_pos,
@@ -638,8 +702,8 @@ def predict_race(grand_prix, year=2025, export_details=False):
             'TrackTemp': default_track,
             'Rainfall': default_rain,
             'OvertakingDifficulty': default_overtake,
-            'BestQualiTime': default_best_q,
-            'QualiPosition': default_qpos,
+            'BestQualiTime': best_time,
+            'QualiPosition': grid_pos,
             'FP3BestTime': default_fp3,
             'Recent3AvgFinish': 10.0,
             'Recent5AvgFinish': 10.0,
@@ -662,18 +726,21 @@ def predict_race(grand_prix, year=2025, export_details=False):
     if pred_df.empty:
         raise ValueError(f"No driver data available for {year} {grand_prix}")
 
-    # Predict qualifying/grid positions using the dedicated model
-    quali_pred_features, _, _, _ = _encode_features(
-        pred_df.assign(Circuit=grand_prix),
-        quali_cols,
-        team_enc,
-        circuit_enc,
-        top_circuits,
-    )
-    grid_scores = grid_model.predict(quali_pred_features)
-    pred_df['GridPosition'] = pd.Series(grid_scores).rank(method='first').astype(int)
-    pred_df['QualiPosition'] = pred_df['GridPosition']
-    pred_df['PredGrid'] = grid_scores
+    if qual_results is None:
+        # Predict grid positions when no qualifying data is available
+        quali_pred_features, _, _, _ = _encode_features(
+            pred_df.assign(Circuit=grand_prix),
+            quali_cols,
+            team_enc,
+            circuit_enc,
+            top_circuits,
+        )
+        grid_scores = grid_model.predict(quali_pred_features)
+        pred_df['GridPosition'] = pd.Series(grid_scores).rank(method='first').astype(int)
+        pred_df['QualiPosition'] = pred_df['GridPosition']
+        pred_df['PredGrid'] = grid_scores
+    else:
+        pred_df['PredGrid'] = pred_df['GridPosition']
     # Save the driver list with predicted grid positions so the user can inspect
     # the raw input given to the finish model.
     pred_df.to_csv("prediction_input.csv", index=False)
