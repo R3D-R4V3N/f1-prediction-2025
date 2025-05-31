@@ -82,10 +82,10 @@ This visualization shows:
 
    - Random Forest Regressor trained on historical finishing positions
    - Feature importance analysis to understand prediction factors
-   - Position randomization with team-weighted probabilities for qualifying simulation
+ - Separate model to predict qualifying positions instead of random simulation
 
 4. **Prediction Generation**
-   - Qualifying simulation based on team strength
+   - Qualifying grid predicted using the dedicated model
    - Race position prediction using the trained model
    - Analysis of expected position changes during the race
 

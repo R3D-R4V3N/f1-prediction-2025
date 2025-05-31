@@ -241,39 +241,62 @@ def _engineer_features(full_data):
     return full_data
 
 
-def _encode_features(full_data):
-    team_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-    team_encoded = team_encoder.fit_transform(full_data[['Team']])
+def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=None, top_circuits=None):
+    """Encode categorical features and return a design matrix.
+
+    Parameters
+    ----------
+    full_data : pd.DataFrame
+        Data containing at least the columns in ``base_cols`` plus ``Team`` and ``Circuit``.
+    base_cols : list
+        Numerical columns to include directly in the feature matrix.
+    team_encoder, circuit_encoder : OneHotEncoder or None
+        Encoders to use. If ``None`` new encoders will be fitted.
+    top_circuits : list or None
+        Subset of circuit columns to keep. If ``None`` the 15 most frequent circuits are used.
+
+    Returns
+    -------
+    features : pd.DataFrame
+        The encoded feature matrix.
+    team_encoder : OneHotEncoder
+        Fitted team encoder (if a new one was created).
+    circuit_encoder : OneHotEncoder
+        Fitted circuit encoder.
+    top_circuits : list
+        Names of the circuit columns that were kept.
+    """
+
+    if team_encoder is None:
+        team_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+        team_encoded = team_encoder.fit_transform(full_data[['Team']])
+    else:
+        team_encoded = team_encoder.transform(full_data[['Team']])
     team_df = pd.DataFrame(team_encoded, columns=team_encoder.get_feature_names_out(['Team']))
 
-    circuit_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-    circuit_encoded = circuit_encoder.fit_transform(full_data[['Circuit']])
-    circuit_df = pd.DataFrame(circuit_encoded, columns=circuit_encoder.get_feature_names_out(['Circuit']))
-
-    top_circuits = circuit_df.sum().sort_values(ascending=False).head(15).index
-    circuit_df = circuit_df[top_circuits]
+    if circuit_encoder is None:
+        circuit_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+        circuit_encoded = circuit_encoder.fit_transform(full_data[['Circuit']])
+        circuit_df = pd.DataFrame(circuit_encoded, columns=circuit_encoder.get_feature_names_out(['Circuit']))
+        if top_circuits is None:
+            top_circuits = circuit_df.sum().sort_values(ascending=False).head(15).index
+    else:
+        circuit_encoded = circuit_encoder.transform(full_data[['Circuit']])
+        circuit_df = pd.DataFrame(circuit_encoded, columns=circuit_encoder.get_feature_names_out(['Circuit']))
+    if top_circuits is not None:
+        circuit_df = circuit_df.reindex(columns=top_circuits, fill_value=0)
 
     features = pd.concat([
-        full_data[[
-            'GridPosition',
-            'Season',
-            'ExperienceCount',
-            'TeamAvgPosition',
-            'RecentAvgPosition',
-            'RecentAvgPoints',
-            'AirTemp',
-            'TrackTemp',
-            'Rainfall',
-            'OvertakingDifficulty',
-            'BestQualiTime',
-            'QualiPosition',
-            'FP3BestTime',
-        ]],
-        team_df,
-        circuit_df
+        full_data[base_cols].reset_index(drop=True),
+        team_df.reset_index(drop=True),
+        circuit_df.reset_index(drop=True)
     ], axis=1)
 
     return features, team_encoder, circuit_encoder, top_circuits
+
+
+def _encode_features(full_data, base_cols, team_encoder=None, circuit_encoder=None, top_circuits=None):
+    return _prepare_features(full_data, base_cols, team_encoder, circuit_encoder, top_circuits)
 
 
 def _train_model(features, target):
@@ -300,9 +323,32 @@ def predict_race(grand_prix):
     race_data = _add_driver_team_info(race_data, seasons)
     race_data = _engineer_features(race_data)
 
-    features, team_enc, circuit_enc, top_circuits = _encode_features(race_data)
+    # Feature sets
+    race_cols = [
+        'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
+        'RecentAvgPosition', 'RecentAvgPoints', 'AirTemp', 'TrackTemp',
+        'Rainfall', 'OvertakingDifficulty', 'BestQualiTime',
+        'QualiPosition', 'FP3BestTime'
+    ]
+    quali_cols = [
+        'Season', 'ExperienceCount', 'TeamAvgPosition', 'RecentAvgPosition',
+        'RecentAvgPoints', 'AirTemp', 'TrackTemp', 'Rainfall',
+        'OvertakingDifficulty', 'BestQualiTime', 'FP3BestTime'
+    ]
+
+    # Encode features for both models using shared encoders
+    features, team_enc, circuit_enc, top_circuits = _encode_features(
+        race_data, race_cols
+    )
+    quali_feats, _, _, _ = _encode_features(
+        race_data, quali_cols, team_enc, circuit_enc, top_circuits
+    )
+
+    # Train race finish model
     target = race_data['Position']
     model = _train_model(features, target)
+    # Train grid prediction model
+    grid_model = _train_model(quali_feats, race_data['GridPosition'])
 
     default_air = race_data['AirTemp'].mean()
     default_track = race_data['TrackTemp'].mean()
@@ -349,35 +395,30 @@ def predict_race(grand_prix):
 
     pred_df = pd.DataFrame(pred_rows)
 
-    team_weights = 1 / pred_df['TeamAvgPosition']
-    team_weights = team_weights.fillna(team_weights.mean())
-    team_weights = team_weights.clip(lower=0.001)
-    norm_w = team_weights / team_weights.sum()
-    grid_order = np.random.choice(pred_df.index, size=len(pred_df), replace=False, p=norm_w)
-    grid_positions = np.ones(len(pred_df)) * 20
-    grid_positions[grid_order] = np.arange(1, len(pred_df) + 1)
-    pred_df['GridPosition'] = grid_positions
+    # Predict qualifying/grid positions using the dedicated model
+    quali_pred_features, _, _, _ = _encode_features(
+        pred_df.assign(Circuit=grand_prix),
+        quali_cols,
+        team_enc,
+        circuit_enc,
+        top_circuits,
+    )
+    grid_scores = grid_model.predict(quali_pred_features)
+    pred_df['GridPosition'] = pd.Series(grid_scores).rank(method='first').astype(int)
+    pred_df['QualiPosition'] = pred_df['GridPosition']
 
-    team_enc_df = pd.DataFrame(team_enc.transform(pred_df[['Team']]), columns=team_enc.get_feature_names_out(['Team']))
-    circuit_df = pd.DataFrame(circuit_enc.transform(pd.DataFrame({'Circuit': [grand_prix] * len(pred_df)})), columns=circuit_enc.get_feature_names_out(['Circuit']))
+    team_enc_df = pd.DataFrame(
+        team_enc.transform(pred_df[['Team']]),
+        columns=team_enc.get_feature_names_out(['Team'])
+    )
+    circuit_df = pd.DataFrame(
+        circuit_enc.transform(pd.DataFrame({'Circuit': [grand_prix] * len(pred_df)})),
+        columns=circuit_enc.get_feature_names_out(['Circuit'])
+    )
     circuit_df = circuit_df.reindex(columns=top_circuits, fill_value=0)
 
     pred_features = pd.concat([
-        pred_df[[
-            'GridPosition',
-            'Season',
-            'ExperienceCount',
-            'TeamAvgPosition',
-            'RecentAvgPosition',
-            'RecentAvgPoints',
-            'AirTemp',
-            'TrackTemp',
-            'Rainfall',
-            'OvertakingDifficulty',
-            'BestQualiTime',
-            'QualiPosition',
-            'FP3BestTime',
-        ]].reset_index(drop=True),
+        pred_df[race_cols].reset_index(drop=True),
         team_enc_df.reset_index(drop=True),
         circuit_df.reset_index(drop=True)
     ], axis=1)
