@@ -9,7 +9,7 @@ except ImportError as exc:
 
 
 def _fetch_session_data(year: int, round_number: int, session_code: str) -> pd.DataFrame:
-    """Load a session and return weather info plus driver lap data."""
+    """Load a session and return weather info plus driver lap/position data."""
     session = fastf1.get_session(year, round_number, session_code)
     session.load()
 
@@ -18,8 +18,16 @@ def _fetch_session_data(year: int, round_number: int, session_code: str) -> pd.D
     avg_track = weather['TrackTemp'].mean()
     rainfall = weather['Rainfall'].max()
 
+    def _to_seconds(val):
+        if pd.isna(val):
+            return None
+        try:
+            return pd.to_timedelta(val).total_seconds()
+        except Exception:
+            return None
+
     if session_code == 'FP3':
-        best_times = (
+        df = (
             session.laps.groupby('Driver')['LapTime']
             .min()
             .dt.total_seconds()
@@ -27,42 +35,57 @@ def _fetch_session_data(year: int, round_number: int, session_code: str) -> pd.D
             .rename(columns={'LapTime': 'BestTime'})
         )
     elif session_code == 'Q':
-        q_res = session.results[['Abbreviation', 'Q1', 'Q2', 'Q3']].copy()
-
-        def _best(row):
-            times = []
-            for col in ['Q1', 'Q2', 'Q3']:
-                val = row[col]
-                if pd.notna(val):
-                    try:
-                        times.append(pd.to_timedelta(val).total_seconds())
-                    except Exception:
-                        pass
-            return min(times) if times else None
-
-        q_res['BestTime'] = q_res.apply(_best, axis=1)
-        best_times = q_res[['Abbreviation', 'BestTime']].rename(columns={'Abbreviation': 'Driver'})
-    else:  # Race session
-        best_times = session.results[['Abbreviation', 'Position']].rename(
+        df = session.results[['Abbreviation', 'Q1', 'Q2', 'Q3']].copy()
+        for col in ['Q1', 'Q2', 'Q3']:
+            df[col] = df[col].apply(_to_seconds)
+        df['BestTime'] = df[['Q1', 'Q2', 'Q3']].min(axis=1)
+        df.rename(columns={'Abbreviation': 'Driver'}, inplace=True)
+    elif session_code == 'SQ':
+        df = session.results[['Abbreviation', 'SQ1', 'SQ2', 'SQ3']].copy()
+        for col in ['SQ1', 'SQ2', 'SQ3']:
+            df[col] = df[col].apply(_to_seconds)
+        df['BestTime'] = df[['SQ1', 'SQ2', 'SQ3']].min(axis=1)
+        df.rename(columns={'Abbreviation': 'Driver'}, inplace=True)
+    else:  # Race or Sprint session
+        df = session.results[['Abbreviation', 'Position']].rename(
             columns={'Abbreviation': 'Driver', 'Position': 'FinishPosition'}
         )
-        best_times['BestTime'] = None
+        df['BestTime'] = None
 
-    best_times['Session'] = session_code
-    best_times['Date'] = session.date.strftime('%Y-%m-%d')
-    best_times['AvgAirTemp'] = avg_air
-    best_times['AvgTrackTemp'] = avg_track
-    best_times['MaxRainfall'] = rainfall
-    if 'FinishPosition' not in best_times.columns:
-        best_times['FinishPosition'] = None
+    for col in ['Q1', 'Q2', 'Q3', 'SQ1', 'SQ2', 'SQ3']:
+        if col not in df.columns:
+            df[col] = None
+    if 'FinishPosition' not in df.columns:
+        df['FinishPosition'] = None
 
-    return best_times[
-        ['Session', 'Date', 'Driver', 'BestTime', 'FinishPosition', 'AvgAirTemp', 'AvgTrackTemp', 'MaxRainfall']
+    df['Session'] = session_code
+    df['Date'] = session.date.strftime('%Y-%m-%d')
+    df['AvgAirTemp'] = avg_air
+    df['AvgTrackTemp'] = avg_track
+    df['MaxRainfall'] = rainfall
+
+    return df[
+        [
+            'Session',
+            'Date',
+            'Driver',
+            'BestTime',
+            'FinishPosition',
+            'Q1',
+            'Q2',
+            'Q3',
+            'SQ1',
+            'SQ2',
+            'SQ3',
+            'AvgAirTemp',
+            'AvgTrackTemp',
+            'MaxRainfall',
+        ]
     ]
 
 
 def export_race_details(year: int, grand_prix: str) -> str:
-    """Export FP3, qualifying and race weather data for the given event."""
+    """Export FP3, qualifying, sprint and race weather data for the given event."""
     cache_dir = 'f1_cache'
     os.makedirs(cache_dir, exist_ok=True)
     fastf1.Cache.enable_cache(cache_dir)
@@ -76,7 +99,7 @@ def export_race_details(year: int, grand_prix: str) -> str:
     event_name = match.iloc[0]['EventName']
 
     data_frames = []
-    for code in ['FP3', 'Q', 'R']:
+    for code in ['FP3', 'Q', 'SQ', 'S', 'R']:
         try:
             data_frames.append(_fetch_session_data(year, round_number, code))
         except Exception as err:
@@ -86,6 +109,12 @@ def export_race_details(year: int, grand_prix: str) -> str:
                 'Driver': [None],
                 'BestTime': [None],
                 'FinishPosition': [None],
+                'Q1': [None],
+                'Q2': [None],
+                'Q3': [None],
+                'SQ1': [None],
+                'SQ2': [None],
+                'SQ3': [None],
                 'AvgAirTemp': [None],
                 'AvgTrackTemp': [None],
                 'MaxRainfall': [None],

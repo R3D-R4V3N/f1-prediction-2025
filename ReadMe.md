@@ -162,7 +162,7 @@ Example:
 python export_race_details.py 2024 "Monaco"
 ```
 
-This creates a CSV in the `race_details` folder containing weather data plus each driver's best FP3 and qualifying laps and their race finish position.
+This creates a CSV in the `race_details` folder containing weather data plus each driver's session results. The CSV now lists best FP3 laps, detailed Q1--Q3 times, sprint shootout times, and race or sprint finishing positions when available.
 
 ## Resources
 
