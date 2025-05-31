@@ -13,13 +13,16 @@ This project uses historical Formula 1 data from the 2022-2024 seasons to build 
 - Qualifying position influence
 - Driver experience factors
 - Circuit-specific performance patterns
+- Weather conditions and overtaking difficulty metrics
+- Best qualifying and practice session times
 
 The system handles team changes for 2025 (like Hamilton moving to Ferrari) and accommodates rookies through team performance metrics.
 
 ## Key Features
 
 - **Data Collection**: Automated fetching of historical F1 race data using the FastF1 API
-- **Feature Engineering**: Comprehensive driver and team metrics creation
+- **Feature Engineering**: Comprehensive driver and team metrics creation, including
+  weather conditions, track overtaking difficulty, and detailed qualifying times
 - **Machine Learning**: Random Forest regression model to predict race finishing positions
 - **Team Change Handling**: Sophisticated method for handling 2025 driver lineup changes
 - **Visualization**: Three different visualizations of prediction results
@@ -72,6 +75,8 @@ This visualization shows:
    - Team performance metrics
    - Driver experience quantification
    - Circuit-specific indicators
+   - Weather measurements and overtaking difficulty
+   - Qualifying and practice session times
 
 3. **Machine Learning Model**
 
@@ -102,6 +107,8 @@ This visualization shows:
   ```
   pip install fastf1 pandas numpy scikit-learn matplotlib seaborn
   ```
+  The FastF1 package is required to access weather data and detailed qualifying
+  information used in the model.
 
 ### Installation
 
