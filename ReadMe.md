@@ -153,6 +153,17 @@ The full prediction includes expected finishing positions for all 20 drivers com
 - Race incident probability modeling
 - Real-time data integration during race weekends
 
+## Race Details Export
+
+Use `export_race_details.py` to save session weather summaries for a Grand Prix.
+Example:
+
+```bash
+python export_race_details.py 2024 "Monaco"
+```
+
+This creates a CSV in the `race_details` folder with FP3, Qualifying and Race temperatures.
+
 ## Resources
 
 - [FastF1 Documentation](https://theoehrly.github.io/Fast-F1/)
