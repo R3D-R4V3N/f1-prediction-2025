@@ -293,6 +293,9 @@ def predict_race(grand_prix):
     seasons = [2022, 2023, 2024]
     race_data = _load_historical_data(seasons)
     race_data = race_data.reset_index(drop=True)
+    # Ensure DriverNumber is numeric for consistent merging
+    race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
+    DRIVERS_DF['DriverNumber'] = pd.to_numeric(DRIVERS_DF['DriverNumber'], errors='coerce')
     race_data = pd.merge(race_data, DRIVERS_DF, on='DriverNumber', how='left')
     race_data = _add_driver_team_info(race_data, seasons)
     race_data = _engineer_features(race_data)
