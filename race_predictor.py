@@ -19,7 +19,13 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
 def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
-    """Return the driver lineup for a given event using FastF1."""
+    """Return the driver lineup for a given event using FastF1.
+
+    For events that haven't taken place yet the race result list is empty. In
+    those cases fall back to the session entry list which is available through
+    the same timing API used for lap data.
+    """
+
     schedule = fastf1.get_event_schedule(year)
     match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
     if match.empty:
@@ -27,10 +33,32 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
 
     round_number = int(match.iloc[0]["RoundNumber"])
     session = fastf1.get_session(year, round_number, "R")
-    session.load()
-    info = session.results[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
-    info.rename(columns={"TeamName": "Team"}, inplace=True)
-    return info
+
+    # First try to get the official race results which contain driver details.
+    try:
+        session.load(telemetry=False, laps=False, weather=False)
+        if hasattr(session, "results") and not session.results.empty:
+            info = session.results[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
+            info.rename(columns={"TeamName": "Team"}, inplace=True)
+            return info
+    except Exception:
+        pass
+
+    # If results are not available yet, attempt to read the entry list from the
+    # timing data which is present for upcoming sessions as soon as timing data
+    # exists (e.g. for practice or qualifying).
+    try:
+        if not session._timing_data_fetched:  # type: ignore[attr-defined]
+            session.load(telemetry=False, laps=False, weather=False)
+        entry_list = session.entry_list  # type: ignore[attr-defined]
+        info = entry_list[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
+        info.rename(columns={"TeamName": "Team"}, inplace=True)
+        if not info.empty:
+            return info
+    except Exception:
+        pass
+
+    raise ValueError(f"No driver data available for {year} {grand_prix}")
 
 # Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
 OVERTAKE_DIFFICULTY = {
