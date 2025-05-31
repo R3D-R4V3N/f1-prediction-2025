@@ -150,7 +150,15 @@ def _load_historical_data(seasons):
 
                     q_results['BestQualiTime'] = q_results.apply(_best_time, axis=1)
                     q_results = q_results.rename(columns={'Position': 'QualiPosition'})
-                    results = pd.merge(results, q_results[['DriverNumber', 'BestQualiTime', 'QualiPosition']], on='DriverNumber', how='left')
+                    results = pd.merge(
+                        results,
+                        q_results[['DriverNumber', 'BestQualiTime', 'QualiPosition']],
+                        on='DriverNumber',
+                        how='left'
+                    )
+                    # Use qualifying order as the starting grid rather than
+                    # the official grid that may include penalties.
+                    results['GridPosition'] = results['QualiPosition']
                 except Exception:
                     results['BestQualiTime'] = np.nan
                     results['QualiPosition'] = np.nan
