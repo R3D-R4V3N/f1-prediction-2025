@@ -8,8 +8,8 @@ except ImportError as exc:
     raise SystemExit("fastf1 is required to run this script. Install via 'pip install fastf1'.") from exc
 
 
-def _fetch_session_data(year: int, round_number: int, session_code: str) -> dict:
-    """Load a session and summarize weather/fastest lap information."""
+def _fetch_session_data(year: int, round_number: int, session_code: str) -> pd.DataFrame:
+    """Load a session and return weather info plus driver lap/position data."""
     session = fastf1.get_session(year, round_number, session_code)
     session.load()
 
@@ -18,29 +18,74 @@ def _fetch_session_data(year: int, round_number: int, session_code: str) -> dict
     avg_track = weather['TrackTemp'].mean()
     rainfall = weather['Rainfall'].max()
 
-    fastest_time = None
-    fastest_driver = None
-    if session_code in ['FP3', 'Q']:
+    def _to_seconds(val):
+        if pd.isna(val):
+            return None
         try:
-            fastest_lap = session.laps.pick_fastest()
-            fastest_time = fastest_lap['LapTime'].total_seconds()
-            fastest_driver = fastest_lap['Driver']
+            return pd.to_timedelta(val).total_seconds()
         except Exception:
-            pass
+            return None
 
-    return {
-        'Session': session_code,
-        'Date': session.date.strftime('%Y-%m-%d'),
-        'AvgAirTemp': avg_air,
-        'AvgTrackTemp': avg_track,
-        'MaxRainfall': rainfall,
-        'FastestLap(s)': fastest_time,
-        'FastestDriver': fastest_driver,
-    }
+    if session_code == 'FP3':
+        df = (
+            session.laps.groupby('Driver')['LapTime']
+            .min()
+            .dt.total_seconds()
+            .reset_index()
+            .rename(columns={'LapTime': 'BestTime'})
+        )
+    elif session_code == 'Q':
+        df = session.results[['Abbreviation', 'Q1', 'Q2', 'Q3']].copy()
+        for col in ['Q1', 'Q2', 'Q3']:
+            df[col] = df[col].apply(_to_seconds)
+        df['BestTime'] = df[['Q1', 'Q2', 'Q3']].min(axis=1)
+        df.rename(columns={'Abbreviation': 'Driver'}, inplace=True)
+    elif session_code == 'SQ':
+        df = session.results[['Abbreviation', 'SQ1', 'SQ2', 'SQ3']].copy()
+        for col in ['SQ1', 'SQ2', 'SQ3']:
+            df[col] = df[col].apply(_to_seconds)
+        df['BestTime'] = df[['SQ1', 'SQ2', 'SQ3']].min(axis=1)
+        df.rename(columns={'Abbreviation': 'Driver'}, inplace=True)
+    else:  # Race or Sprint session
+        df = session.results[['Abbreviation', 'Position']].rename(
+            columns={'Abbreviation': 'Driver', 'Position': 'FinishPosition'}
+        )
+        df['BestTime'] = None
+
+    for col in ['Q1', 'Q2', 'Q3', 'SQ1', 'SQ2', 'SQ3']:
+        if col not in df.columns:
+            df[col] = None
+    if 'FinishPosition' not in df.columns:
+        df['FinishPosition'] = None
+
+    df['Session'] = session_code
+    df['Date'] = session.date.strftime('%Y-%m-%d')
+    df['AvgAirTemp'] = avg_air
+    df['AvgTrackTemp'] = avg_track
+    df['MaxRainfall'] = rainfall
+
+    return df[
+        [
+            'Session',
+            'Date',
+            'Driver',
+            'BestTime',
+            'FinishPosition',
+            'Q1',
+            'Q2',
+            'Q3',
+            'SQ1',
+            'SQ2',
+            'SQ3',
+            'AvgAirTemp',
+            'AvgTrackTemp',
+            'MaxRainfall',
+        ]
+    ]
 
 
 def export_race_details(year: int, grand_prix: str) -> str:
-    """Export FP3, qualifying and race weather data for the given event."""
+    """Export FP3, qualifying, sprint and race weather data for the given event."""
     cache_dir = 'f1_cache'
     os.makedirs(cache_dir, exist_ok=True)
     fastf1.Cache.enable_cache(cache_dir)
@@ -53,23 +98,31 @@ def export_race_details(year: int, grand_prix: str) -> str:
     round_number = int(match.iloc[0]['RoundNumber'])
     event_name = match.iloc[0]['EventName']
 
-    data = []
-    for code in ['FP3', 'Q', 'R']:
+    data_frames = []
+    for code in ['FP3', 'Q', 'SQ', 'S', 'R']:
         try:
-            data.append(_fetch_session_data(year, round_number, code))
+            data_frames.append(_fetch_session_data(year, round_number, code))
         except Exception as err:
-            data.append({
-                'Session': code,
-                'Date': '',
-                'AvgAirTemp': None,
-                'AvgTrackTemp': None,
-                'MaxRainfall': None,
-                'FastestLap(s)': None,
-                'FastestDriver': None,
+            fallback = pd.DataFrame({
+                'Session': [code],
+                'Date': [''],
+                'Driver': [None],
+                'BestTime': [None],
+                'FinishPosition': [None],
+                'Q1': [None],
+                'Q2': [None],
+                'Q3': [None],
+                'SQ1': [None],
+                'SQ2': [None],
+                'SQ3': [None],
+                'AvgAirTemp': [None],
+                'AvgTrackTemp': [None],
+                'MaxRainfall': [None],
             })
+            data_frames.append(fallback)
             print(f"Failed to load {code} session: {err}")
 
-    df = pd.DataFrame(data)
+    df = pd.concat(data_frames, ignore_index=True)
     out_dir = 'race_details'
     os.makedirs(out_dir, exist_ok=True)
     safe_name = event_name.lower().replace(' ', '_')
