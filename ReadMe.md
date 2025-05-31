@@ -23,7 +23,7 @@ The system handles team changes for 2025 (like Hamilton moving to Ferrari) and a
 - **Data Collection**: Automated fetching of historical F1 race data using the FastF1 API
 - **Feature Engineering**: Comprehensive driver and team metrics creation, including
   weather conditions, track overtaking difficulty, and detailed qualifying times
-- **Machine Learning**: Random Forest regression model to predict race finishing positions
+ - **Machine Learning**: Two-stage XGBoost models optimized with Bayesian search to predict qualifying and race finishing positions
 - **Team Change Handling**: Sophisticated method for handling 2025 driver lineup changes
 - **Visualization**: Three different visualizations of prediction results
 - **Fallback Systems**: Robust data generation when API data is incomplete
@@ -80,9 +80,9 @@ This visualization shows:
 
 3. **Machine Learning Model**
 
-   - Random Forest Regressor trained on historical finishing positions
-   - Feature importance analysis to understand prediction factors
- - Separate model to predict qualifying positions instead of random simulation
+   - XGBoost Regressors trained in two stages (qualifying then race finish)
+   - Bayesian hyperparameter optimization minimizing MAE
+ - Separate qualifying model feeds predicted grid positions into the race model
 
 4. **Prediction Generation**
    - Qualifying grid predicted using the dedicated model

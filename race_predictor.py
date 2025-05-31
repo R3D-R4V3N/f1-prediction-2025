@@ -5,9 +5,11 @@ import warnings
 import fastf1
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import RandomizedSearchCV
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import mean_absolute_error
+from sklearn.model_selection import TimeSeriesSplit
+from xgboost import XGBRegressor
+import optuna
 
 warnings.filterwarnings('ignore')
 
@@ -219,11 +221,65 @@ def _engineer_features(full_data):
         .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
     )
     full_data['RecentAvgPosition'] = full_data['RecentAvgPosition'].fillna(full_data['Position'].mean())
+    full_data['Recent3AvgFinish'] = (
+        full_data.groupby('DriverNumber')['Position']
+        .rolling(window=3, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+    )
+    full_data['Recent3AvgFinish'] = full_data['Recent3AvgFinish'].fillna(full_data['Position'].mean())
+    full_data['Recent5AvgFinish'] = (
+        full_data.groupby('DriverNumber')['Position']
+        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+    )
+    full_data['Recent5AvgFinish'] = full_data['Recent5AvgFinish'].fillna(full_data['Position'].mean())
+    full_data['QualiImprove'] = full_data['GridPosition'] - full_data['Position']
     full_data['RecentAvgPoints'] = (
         full_data.groupby('DriverNumber')['Points']
         .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
     )
     full_data['RecentAvgPoints'] = full_data['RecentAvgPoints'].fillna(0)
+
+    driver_track = full_data.groupby(['DriverNumber', 'Circuit'])['Position'].agg(
+        DriverAvgTrackFinish='mean',
+        DriverTrackPodiums=lambda x: (x <= 3).sum(),
+        DriverTrackDNFs=lambda x: (x > 20).sum(),
+    ).reset_index()
+    full_data = pd.merge(full_data, driver_track, on=['DriverNumber', 'Circuit'], how='left')
+
+    full_data['TeamRecentQuali'] = (
+        full_data.groupby('HistoricalTeam')['QualiPosition']
+        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+    )
+    full_data['TeamRecentFinish'] = (
+        full_data.groupby('HistoricalTeam')['Position']
+        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+    )
+    full_data['TeamReliability'] = (
+        full_data.groupby('HistoricalTeam')['Position']
+        .rolling(window=5, min_periods=1)
+        .apply(lambda x: (x > 20).sum())
+        .shift()
+        .reset_index(level=0, drop=True)
+    )
+    full_data['TeamRecentQuali'] = full_data['TeamRecentQuali'].fillna(full_data['QualiPosition'].mean())
+    full_data['TeamRecentFinish'] = full_data['TeamRecentFinish'].fillna(full_data['Position'].mean())
+    full_data['TeamReliability'] = full_data['TeamReliability'].fillna(0)
+
+    TRACK_TYPE = {
+        'Monaco Grand Prix': 'street',
+        'Singapore Grand Prix': 'street',
+        'Las Vegas Grand Prix': 'street',
+    }
+    DOWNFORCE = {
+        'Monaco Grand Prix': 'high',
+        'Hungarian Grand Prix': 'high',
+        'Italian Grand Prix': 'low',
+        'Belgian Grand Prix': 'low',
+    }
+    full_data['TrackType'] = full_data['Circuit'].map(TRACK_TYPE).fillna('permanent')
+    full_data['Downforce'] = full_data['Circuit'].map(DOWNFORCE).fillna('medium')
+    full_data['IsStreet'] = full_data['TrackType'].map({'street': 1, 'permanent': 0})
+    df_level_map = {'low': 0, 'medium': 1, 'high': 2}
+    full_data['DownforceLevel'] = full_data['Downforce'].map(df_level_map)
 
     team_perf = full_data.groupby(['HistoricalTeam', 'Season'])['Position'].mean().reset_index()
     team_perf = team_perf.rename(columns={'Position': 'TeamAvgPosition'})
@@ -237,6 +293,8 @@ def _engineer_features(full_data):
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
+    full_data['IsStreet'] = full_data['IsStreet'].fillna(0)
+    full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
 
     return full_data
 
@@ -299,17 +357,41 @@ def _encode_features(full_data, base_cols, team_encoder=None, circuit_encoder=No
     return _prepare_features(full_data, base_cols, team_encoder, circuit_encoder, top_circuits)
 
 
-def _train_model(features, target):
-    param_dist = {
-        'n_estimators': [150, 200, 250],
-        'max_depth': [10, 15, 20],
-        'min_samples_split': [2, 4],
-        'min_samples_leaf': [1, 2]
-    }
-    base_model = RandomForestRegressor(random_state=42)
-    search = RandomizedSearchCV(base_model, param_dist, n_iter=5, cv=3, random_state=42, n_jobs=-1)
-    search.fit(features, target)
-    return search.best_estimator_
+def _train_model(features, target, cv):
+    """Train an XGBoost model using Bayesian optimization to minimize MAE."""
+
+    def objective(trial):
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 200, 600),
+            'max_depth': trial.suggest_int('max_depth', 3, 10),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+        }
+        model = XGBRegressor(
+            objective='reg:squarederror',
+            random_state=42,
+            **params,
+        )
+
+        scores = []
+        for train_idx, val_idx in cv.split(features):
+            model.fit(features.iloc[train_idx], target.iloc[train_idx])
+            preds = model.predict(features.iloc[val_idx])
+            scores.append(mean_absolute_error(target.iloc[val_idx], preds))
+        return np.mean(scores)
+
+    study = optuna.create_study(direction='minimize')
+    study.optimize(objective, n_trials=20, show_progress_bar=False)
+    best_params = study.best_params
+    model = XGBRegressor(
+        objective='reg:squarederror',
+        random_state=42,
+        **best_params,
+    )
+    model.fit(features, target)
+    return model
 
 
 def predict_race(grand_prix):
@@ -328,12 +410,17 @@ def predict_race(grand_prix):
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
         'RecentAvgPosition', 'RecentAvgPoints', 'AirTemp', 'TrackTemp',
         'Rainfall', 'OvertakingDifficulty', 'BestQualiTime',
-        'QualiPosition', 'FP3BestTime'
+        'QualiPosition', 'FP3BestTime', 'Recent3AvgFinish',
+        'Recent5AvgFinish', 'QualiImprove', 'DriverAvgTrackFinish',
+        'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
+        'TeamRecentFinish', 'TeamReliability', 'IsStreet',
+        'DownforceLevel'
     ]
     quali_cols = [
         'Season', 'ExperienceCount', 'TeamAvgPosition', 'RecentAvgPosition',
         'RecentAvgPoints', 'AirTemp', 'TrackTemp', 'Rainfall',
-        'OvertakingDifficulty', 'BestQualiTime', 'FP3BestTime'
+        'OvertakingDifficulty', 'BestQualiTime', 'FP3BestTime',
+        'TeamRecentQuali', 'IsStreet', 'DownforceLevel'
     ]
 
     # Encode features for both models using shared encoders
@@ -344,11 +431,25 @@ def predict_race(grand_prix):
         race_data, quali_cols, team_enc, circuit_enc, top_circuits
     )
 
+    cv = TimeSeriesSplit(n_splits=3)
+
     # Train race finish model
     target = race_data['Position']
-    model = _train_model(features, target)
+    model = _train_model(features, target, cv)
     # Train grid prediction model
-    grid_model = _train_model(quali_feats, race_data['GridPosition'])
+    grid_model = _train_model(quali_feats, race_data['GridPosition'], cv)
+
+    grid_preds_hist = grid_model.predict(quali_feats)
+    grid_mae = mean_absolute_error(race_data['GridPosition'], grid_preds_hist)
+    race_data['PredGrid'] = grid_preds_hist
+
+    race_feats_with_pred, _, _, _ = _encode_features(
+        race_data, race_cols + ['PredGrid'], team_enc, circuit_enc, top_circuits
+    )
+    model = _train_model(race_feats_with_pred, target, cv)
+    finish_preds_hist = model.predict(race_feats_with_pred)
+    finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
+    features = race_feats_with_pred
 
     default_air = race_data['AirTemp'].mean()
     default_track = race_data['TrackTemp'].mean()
@@ -362,6 +463,20 @@ def predict_race(grand_prix):
     pred_rows = []
     team_strength = race_data[race_data['Season'] == 2024].groupby('HistoricalTeam')['Position'].mean().reset_index()
     team_strength = team_strength.rename(columns={'HistoricalTeam': 'Team', 'Position': 'TeamAvgPosition'})
+    team_recent_quali = race_data.groupby('HistoricalTeam')['QualiPosition'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'QualiPosition': 'TeamRecentQuali'})
+    team_recent_finish = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'Position': 'TeamRecentFinish'})
+    team_reliability = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).apply(lambda x: (x > 20).sum()).reset_index().rename(columns={'Position': 'TeamReliability'})
+    team_recent_quali = team_recent_quali.groupby('HistoricalTeam').last().reset_index()
+    team_recent_finish = team_recent_finish.groupby('HistoricalTeam').last().reset_index()
+    team_reliability = team_reliability.groupby('HistoricalTeam').last().reset_index()
+    team_info = team_strength.merge(team_recent_quali, on='HistoricalTeam', how='left')
+    team_info = team_info.merge(team_recent_finish, on='HistoricalTeam', how='left')
+    team_info = team_info.merge(team_reliability, on='HistoricalTeam', how='left')
+    team_info = team_info.rename(columns={'HistoricalTeam': 'Team'})
+
+    driver_stats_lookup = race_data.set_index(['DriverNumber', 'Circuit'])[
+        ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
+    ]
 
     for d in DRIVERS_2025:
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
@@ -369,11 +484,27 @@ def predict_race(grand_prix):
             exp_count = 1
         else:
             exp_count += 23
-        team_avg = team_strength[team_strength['Team'] == d['Team']]
-        if len(team_avg) == 0:
-            team_avg_pos = team_strength['TeamAvgPosition'].mean()
+        team_row = team_info[team_info['Team'] == d['Team']]
+        if len(team_row) == 0:
+            team_avg_pos = team_info['TeamAvgPosition'].mean()
+            team_recent_q = team_info['TeamRecentQuali'].mean()
+            team_recent_f = team_info['TeamRecentFinish'].mean()
+            team_rel = 0.0
         else:
-            team_avg_pos = team_avg.iloc[0]['TeamAvgPosition']
+            team_avg_pos = team_row.iloc[0]['TeamAvgPosition']
+            team_recent_q = team_row.iloc[0]['TeamRecentQuali']
+            team_recent_f = team_row.iloc[0]['TeamRecentFinish']
+            team_rel = team_row.iloc[0]['TeamReliability']
+
+        stats = driver_stats_lookup.loc[(d['DriverNumber'], grand_prix)] if (d['DriverNumber'], grand_prix) in driver_stats_lookup.index else None
+        if stats is None:
+            avg_track = race_data['DriverAvgTrackFinish'].mean()
+            podiums = 0.0
+            dnfs = 0.0
+        else:
+            avg_track = stats['DriverAvgTrackFinish']
+            podiums = stats['DriverTrackPodiums']
+            dnfs = stats['DriverTrackDNFs']
         pred_rows.append({
             'GridPosition': np.nan,
             'Season': 2025,
@@ -388,6 +519,17 @@ def predict_race(grand_prix):
             'BestQualiTime': default_best_q,
             'QualiPosition': default_qpos,
             'FP3BestTime': default_fp3,
+            'Recent3AvgFinish': 10.0,
+            'Recent5AvgFinish': 10.0,
+            'QualiImprove': 0.0,
+            'DriverAvgTrackFinish': avg_track,
+            'DriverTrackPodiums': podiums,
+            'DriverTrackDNFs': dnfs,
+            'TeamRecentQuali': team_recent_q,
+            'TeamRecentFinish': team_recent_f,
+            'TeamReliability': team_rel,
+            'IsStreet': 1 if grand_prix in ['Monaco Grand Prix','Singapore Grand Prix','Las Vegas Grand Prix'] else 0,
+            'DownforceLevel': 1,
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
@@ -406,6 +548,7 @@ def predict_race(grand_prix):
     grid_scores = grid_model.predict(quali_pred_features)
     pred_df['GridPosition'] = pd.Series(grid_scores).rank(method='first').astype(int)
     pred_df['QualiPosition'] = pred_df['GridPosition']
+    pred_df['PredGrid'] = grid_scores
 
     team_enc_df = pd.DataFrame(
         team_enc.transform(pred_df[['Team']]),
@@ -418,7 +561,7 @@ def predict_race(grand_prix):
     circuit_df = circuit_df.reindex(columns=top_circuits, fill_value=0)
 
     pred_features = pd.concat([
-        pred_df[race_cols].reset_index(drop=True),
+        pred_df[race_cols + ['PredGrid']].reset_index(drop=True),
         team_enc_df.reset_index(drop=True),
         circuit_df.reset_index(drop=True)
     ], axis=1)
@@ -436,6 +579,8 @@ def predict_race(grand_prix):
         'Predicted_Position': preds
     }).sort_values('Predicted_Position')
     results['Final_Position'] = range(1, len(results) + 1)
+    print(f"Grid MAE on training data: {grid_mae:.2f}")
+    print(f"Finish MAE on training data: {finish_mae:.2f}")
     return results
 
 
