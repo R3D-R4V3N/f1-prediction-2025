@@ -155,14 +155,14 @@ The full prediction includes expected finishing positions for all 20 drivers com
 
 ## Race Details Export
 
-Use `export_race_details.py` to save session weather summaries for a Grand Prix.
+Use `export_race_details.py` to save session weather summaries and driver lap times for a Grand Prix.
 Example:
 
 ```bash
 python export_race_details.py 2024 "Monaco"
 ```
 
-This creates a CSV in the `race_details` folder with FP3, Qualifying and Race temperatures.
+This creates a CSV in the `race_details` folder containing weather data plus each driver's best FP3 and qualifying laps and their race finish position.
 
 ## Resources
 
