@@ -18,31 +18,19 @@ CACHE_DIR = 'f1_cache'
 os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
-# 2025 driver lineup
-DRIVERS_2025 = [
-    {'DriverNumber': 16, 'Abbreviation': 'LEC', 'FullName': 'Charles Leclerc', 'Team': 'Ferrari'},
-    {'DriverNumber': 44, 'Abbreviation': 'HAM', 'FullName': 'Lewis Hamilton', 'Team': 'Ferrari'},
-    {'DriverNumber': 63, 'Abbreviation': 'RUS', 'FullName': 'George Russell', 'Team': 'Mercedes'},
-    {'DriverNumber': 72, 'Abbreviation': 'ANT', 'FullName': 'Andrea Kimi Antonelli', 'Team': 'Mercedes'},
-    {'DriverNumber': 1, 'Abbreviation': 'VER', 'FullName': 'Max Verstappen', 'Team': 'Red Bull Racing'},
-    {'DriverNumber': 40, 'Abbreviation': 'LAW', 'FullName': 'Liam Lawson', 'Team': 'Red Bull Racing'},
-    {'DriverNumber': 4, 'Abbreviation': 'NOR', 'FullName': 'Lando Norris', 'Team': 'McLaren'},
-    {'DriverNumber': 81, 'Abbreviation': 'PIA', 'FullName': 'Oscar Piastri', 'Team': 'McLaren'},
-    {'DriverNumber': 14, 'Abbreviation': 'ALO', 'FullName': 'Fernando Alonso', 'Team': 'Aston Martin'},
-    {'DriverNumber': 18, 'Abbreviation': 'STR', 'FullName': 'Lance Stroll', 'Team': 'Aston Martin'},
-    {'DriverNumber': 10, 'Abbreviation': 'GAS', 'FullName': 'Pierre Gasly', 'Team': 'Alpine'},
-    {'DriverNumber': 5, 'Abbreviation': 'DOO', 'FullName': 'Jack Doohan', 'Team': 'Alpine'},
-    {'DriverNumber': 23, 'Abbreviation': 'ALB', 'FullName': 'Alexander Albon', 'Team': 'Williams'},
-    {'DriverNumber': 55, 'Abbreviation': 'SAI', 'FullName': 'Carlos Sainz Jr.', 'Team': 'Williams'},
-    {'DriverNumber': 31, 'Abbreviation': 'OCO', 'FullName': 'Esteban Ocon', 'Team': 'Haas F1 Team'},
-    {'DriverNumber': 87, 'Abbreviation': 'BEA', 'FullName': 'Oliver Bearman', 'Team': 'Haas F1 Team'},
-    {'DriverNumber': 27, 'Abbreviation': 'HUL', 'FullName': 'Nico Hülkenberg', 'Team': 'Kick Sauber'},
-    {'DriverNumber': 50, 'Abbreviation': 'BOR', 'FullName': 'Gabriel Bortoleto', 'Team': 'Kick Sauber'},
-    {'DriverNumber': 22, 'Abbreviation': 'TSU', 'FullName': 'Yuki Tsunoda', 'Team': 'VCARB'},
-    {'DriverNumber': 41, 'Abbreviation': 'HAD', 'FullName': 'Isack Hadjar', 'Team': 'VCARB'}
-]
+def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
+    """Return the driver lineup for a given event using FastF1."""
+    schedule = fastf1.get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
 
-DRIVERS_DF = pd.DataFrame(DRIVERS_2025)
+    round_number = int(match.iloc[0]["RoundNumber"])
+    session = fastf1.get_session(year, round_number, "R")
+    session.load()
+    info = session.results[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
+    info.rename(columns={"TeamName": "Team"}, inplace=True)
+    return info
 
 # Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
 OVERTAKE_DIFFICULTY = {
@@ -150,15 +138,18 @@ def _load_historical_data(seasons):
 
                     q_results['BestQualiTime'] = q_results.apply(_best_time, axis=1)
                     q_results = q_results.rename(columns={'Position': 'QualiPosition'})
+                    q_results['Q3Time'] = q_results['Q3'].apply(
+                        lambda x: pd.to_timedelta(x).total_seconds() if pd.notna(x) else np.nan
+                    )
+                    q_results['GridFromQ3'] = q_results['Q3Time'].rank(method='first')
                     results = pd.merge(
                         results,
-                        q_results[['DriverNumber', 'BestQualiTime', 'QualiPosition']],
+                        q_results[['DriverNumber', 'BestQualiTime', 'QualiPosition', 'GridFromQ3']],
                         on='DriverNumber',
                         how='left'
                     )
-                    # Use qualifying order as the starting grid rather than
-                    # the official grid that may include penalties.
-                    results['GridPosition'] = results['QualiPosition']
+                    # Use Q3 ranking for grid, falling back to qualifying order if needed.
+                    results['GridPosition'] = results['GridFromQ3'].fillna(results['QualiPosition'])
                 except Exception:
                     results['BestQualiTime'] = np.nan
                     results['QualiPosition'] = np.nan
@@ -410,14 +401,15 @@ def _train_model(features, target, cv):
     return model
 
 
-def predict_race(grand_prix):
+def predict_race(grand_prix, year=2025):
     seasons = [2022, 2023, 2024]
     race_data = _load_historical_data(seasons)
     race_data = race_data.reset_index(drop=True)
     # Ensure DriverNumber is numeric for consistent merging
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
-    DRIVERS_DF['DriverNumber'] = pd.to_numeric(DRIVERS_DF['DriverNumber'], errors='coerce')
-    race_data = pd.merge(race_data, DRIVERS_DF, on='DriverNumber', how='left')
+    drivers_df = _get_event_drivers(year, grand_prix)
+    drivers_df['DriverNumber'] = pd.to_numeric(drivers_df['DriverNumber'], errors='coerce')
+    race_data = pd.merge(race_data, drivers_df, on='DriverNumber', how='left')
     race_data = _add_driver_team_info(race_data, seasons)
     race_data = _engineer_features(race_data)
 
@@ -499,7 +491,7 @@ def predict_race(grand_prix):
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
     ]
 
-    for d in DRIVERS_2025:
+    for _, d in drivers_df.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
         if exp_count == 0:
             exp_count = 1
@@ -528,7 +520,7 @@ def predict_race(grand_prix):
             dnfs = stats['DriverTrackDNFs']
         pred_rows.append({
             'GridPosition': np.nan,
-            'Season': 2025,
+            'Season': year,
             'ExperienceCount': exp_count,
             'TeamAvgPosition': team_avg_pos,
             'RecentAvgPosition': 10.0,
@@ -601,5 +593,5 @@ def predict_race(grand_prix):
 
 
 if __name__ == '__main__':
-    res = predict_race('Chinese Grand Prix')
+    res = predict_race('Chinese Grand Prix', year=2025)
     print(res[['Driver', 'Team', 'Grid', 'Final_Position']].head())
