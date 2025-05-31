@@ -324,6 +324,17 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
         Names of the circuit columns that were kept.
     """
 
+    full_data = full_data.copy()
+
+    # ``Team`` or ``Circuit`` columns may be missing if the calling code fails to
+    # merge driver or event details correctly.  Rather than raising a KeyError
+    # when one-hot encoding, provide sensible defaults so the model can still
+    # run.
+    if "Team" not in full_data.columns:
+        full_data["Team"] = "Unknown Team"
+    if "Circuit" not in full_data.columns:
+        full_data["Circuit"] = "Unknown Circuit"
+
     # Ensure all numerical base columns are numeric to avoid object dtypes when
     # creating the feature matrix used by XGBoost. Missing values are filled with
     # ``0`` to keep shapes consistent during prediction.
