@@ -4,6 +4,7 @@ import warnings
 
 import fastf1
 import requests
+from export_race_details import export_race_details
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
@@ -506,7 +507,7 @@ def _train_model(features, target, cv):
     return model
 
 
-def predict_race(grand_prix, year=2025):
+def predict_race(grand_prix, year=2025, export_details=False):
     seasons = [2022, 2023, 2024]
     race_data = _load_historical_data(seasons)
     race_data = race_data.reset_index(drop=True)
@@ -703,11 +704,17 @@ def predict_race(grand_prix, year=2025):
     results['Final_Position'] = range(1, len(results) + 1)
     # Save the final ordered predictions for transparency
     results.to_csv("prediction_results.csv", index=False)
+    if export_details:
+        try:
+            detail_path = export_race_details(year, grand_prix)
+            print(f"Saved session data to {detail_path}")
+        except Exception as err:
+            print(f"Could not export session data: {err}")
     print(f"Grid MAE on training data: {grid_mae:.2f}")
     print(f"Finish MAE on training data: {finish_mae:.2f}")
     return results
 
 
 if __name__ == '__main__':
-    res = predict_race('Chinese Grand Prix', year=2025)
+    res = predict_race('Chinese Grand Prix', year=2025, export_details=True)
     print(res[['Driver', 'Team', 'Grid', 'Final_Position']].head())

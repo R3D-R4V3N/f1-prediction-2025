@@ -164,6 +164,14 @@ python export_race_details.py 2024 "Monaco"
 
 This creates a CSV in the `race_details` folder containing weather data plus each driver's session results. The CSV now lists best FP3 laps, detailed Q1--Q3 times, sprint shootout times, and race or sprint finishing positions when available.
 
+The `predict_race` function can also export these details for the selected event
+by passing `export_details=True`:
+
+```python
+from race_predictor import predict_race
+predict_race("Monaco Grand Prix", year=2025, export_details=True)
+```
+
 ## Resources
 
 - [FastF1 Documentation](https://theoehrly.github.io/Fast-F1/)
