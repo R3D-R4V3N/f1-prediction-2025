@@ -326,6 +326,20 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
 
     full_data = full_data.copy()
 
+    if full_data.empty:
+        team_cols = (
+            team_encoder.get_feature_names_out(["Team"]) if team_encoder else []
+        )
+        circuit_cols = (
+            circuit_encoder.get_feature_names_out(["Circuit"])
+            if circuit_encoder
+            else []
+        )
+        if top_circuits is not None:
+            circuit_cols = [c for c in circuit_cols if c in top_circuits]
+        empty_cols = base_cols + list(team_cols) + list(circuit_cols)
+        return pd.DataFrame(columns=empty_cols), team_encoder, circuit_encoder, top_circuits
+
     # ``Team`` or ``Circuit`` columns may be missing if the calling code fails to
     # merge driver or event details correctly.  Rather than raising a KeyError
     # when one-hot encoding, provide sensible defaults so the model can still
@@ -560,6 +574,9 @@ def predict_race(grand_prix, year=2025):
         })
 
     pred_df = pd.DataFrame(pred_rows)
+
+    if pred_df.empty:
+        raise ValueError(f"No driver data available for {year} {grand_prix}")
 
     # Predict qualifying/grid positions using the dedicated model
     quali_pred_features, _, _, _ = _encode_features(
