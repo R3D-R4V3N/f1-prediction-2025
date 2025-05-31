@@ -563,26 +563,21 @@ def predict_race(grand_prix):
     pred_df['QualiPosition'] = pred_df['GridPosition']
     pred_df['PredGrid'] = grid_scores
 
-    team_enc_df = pd.DataFrame(
-        team_enc.transform(pred_df[['Team']]),
-        columns=team_enc.get_feature_names_out(['Team'])
+    # Encode the prediction rows using the same helper as for training. This
+    # converts numerical columns to proper dtypes and creates aligned one-hot
+    # encoded team and circuit features.
+    race_pred_features, _, _, _ = _encode_features(
+        pred_df.assign(Circuit=grand_prix),
+        race_cols + ['PredGrid'],
+        team_enc,
+        circuit_enc,
+        top_circuits,
     )
-    circuit_df = pd.DataFrame(
-        circuit_enc.transform(pd.DataFrame({'Circuit': [grand_prix] * len(pred_df)})),
-        columns=circuit_enc.get_feature_names_out(['Circuit'])
-    )
-    circuit_df = circuit_df.reindex(columns=top_circuits, fill_value=0)
 
-    pred_features = pd.concat([
-        pred_df[race_cols + ['PredGrid']].reset_index(drop=True),
-        team_enc_df.reset_index(drop=True),
-        circuit_df.reset_index(drop=True)
-    ], axis=1)
-
-    for col in features.columns:
-        if col not in pred_features.columns:
-            pred_features[col] = 0
-    pred_features = pred_features[features.columns]
+    # Ensure the column order matches the training feature matrix. Missing
+    # columns (possible if new teams or circuits appear) are filled with 0 so the
+    # XGBoost model receives the expected input shape.
+    pred_features = race_pred_features.reindex(columns=features.columns, fill_value=0)
 
     preds = model.predict(pred_features)
     results = pd.DataFrame({
