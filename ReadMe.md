@@ -1,12 +1,12 @@
-# F1 Shanghai Grand Prix 2025 Prediction Model
+# F1 2025 Race Prediction Model
 
-A machine learning-based prediction system for forecasting Formula 1 race results for the 2025 Shanghai Grand Prix using historical F1 data and team/driver characteristics.
+This project predicts Formula 1 race results for the 2025 season using historical data and team/driver characteristics. It now includes a simple web interface where you can select any Grand Prix and view the predicted finishing order.
 
 ![Starting Grid vs Predicted Finish](grid_vs_finish.png)
 
 ## Project Overview
 
-This project uses historical Formula 1 data from the 2022-2024 seasons to build a predictive model that forecasts the finishing positions for the upcoming 2025 Shanghai Grand Prix. The model incorporates:
+This project uses historical Formula 1 data from the 2022-2024 seasons to build a predictive model for 2025 races. The model incorporates:
 
 - Historical driver performance
 - Team strength assessment
@@ -24,6 +24,7 @@ The system handles team changes for 2025 (like Hamilton moving to Ferrari) and a
 - **Team Change Handling**: Sophisticated method for handling 2025 driver lineup changes
 - **Visualization**: Three different visualizations of prediction results
 - **Fallback Systems**: Robust data generation when API data is incomplete
+- **Web Interface**: Streamlit app to select a Grand Prix and run predictions
 
 ## Visualizations
 
@@ -117,9 +118,14 @@ This visualization shows:
    pip install -r requirements.txt
    ```
 
-3. Run the prediction script:
+3. Run the prediction script for a single race:
    ```
    python shanghai_f1.py
+   ```
+
+4. Launch the Streamlit web app:
+   ```
+   streamlit run webapp.py
    ```
 
 ## Results
@@ -130,7 +136,7 @@ The model predicts a podium of:
 2. 🥈 Liam Lawson (Red Bull Racing)
 3. 🥉 George Russell (Mercedes)
 
-The full prediction includes expected finishing positions for all 20 drivers competing in the 2025 Shanghai Grand Prix.
+The full prediction includes expected finishing positions for all 20 drivers competing in a selected 2025 Grand Prix.
 
 ## Future Improvements
 
