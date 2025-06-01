@@ -348,10 +348,6 @@ def _engineer_features(full_data):
     else:
         full_data['DeltaToTeammateQuali'] = np.nan
 
-    # Delta to team mate finish position
-    team_mean_pos = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['Position'].transform('mean')
-    team_size_pos = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['Position'].transform('size')
-    full_data['DeltaToTeammateFinish'] = np.where(team_size_pos > 1, (full_data['Position'] - team_mean_pos) * 2, np.nan)
 
     # Qualifying session gain (Q3 - Q1) normalized per race
     if 'Q1Time' in full_data.columns and 'Q3Time' in full_data.columns:
@@ -379,7 +375,6 @@ def _engineer_features(full_data):
         .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
     )
     full_data['Recent5AvgFinish'] = full_data['Recent5AvgFinish'].fillna(full_data['Position'].mean())
-    full_data['QualiImprove'] = full_data['GridPosition'] - full_data['Position']
     full_data['RecentAvgPoints'] = (
         full_data.groupby('DriverNumber')['Points']
         .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
@@ -446,7 +441,6 @@ def _engineer_features(full_data):
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
     full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
     full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(0)
-    full_data['DeltaToTeammateFinish'] = full_data['DeltaToTeammateFinish'].fillna(0)
     full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(0)
     full_data['DidNotFinish'] = full_data['DidNotFinish'].fillna(False)
 
@@ -651,9 +645,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'RecentAvgPosition', 'RecentAvgPoints', 'AirTemp', 'TrackTemp',
         'Rainfall', 'AverageOvertakes', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'DeltaToBestQuali',
-        'DeltaToTeammateQuali', 'DeltaToTeammateFinish',
+        'DeltaToTeammateQuali',
         'GridDropCount', 'QualiSessionGain', 'Recent3AvgFinish',
-        'Recent5AvgFinish', 'QualiImprove', 'DriverAvgTrackFinish',
+        'Recent5AvgFinish', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability', 'IsStreet',
         'DownforceLevel'
@@ -793,7 +787,6 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         else:
             qual_results['QualiSessionGain'] = 0
         qual_results['GridDropCount'] = 0
-        qual_results['DeltaToTeammateFinish'] = 0
 
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
     for _, d in driver_iter.iterrows():
@@ -851,12 +844,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'FP3BestTime': fp3_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
             'DeltaToTeammateQuali': d.get('DeltaToTeammateQuali', 0),
-            'DeltaToTeammateFinish': d.get('DeltaToTeammateFinish', 0),
             'GridDropCount': d.get('GridDropCount', 0),
             'QualiSessionGain': d.get('QualiSessionGain', 0),
             'Recent3AvgFinish': 10.0,
             'Recent5AvgFinish': 10.0,
-            'QualiImprove': 0.0,
             'DriverAvgTrackFinish': avg_track,
             'DriverTrackPodiums': podiums,
             'DriverTrackDNFs': dnfs,
