@@ -252,6 +252,82 @@ CIRCUIT_METADATA = {
     'Abu Dhabi Grand Prix': {'NumCorners': 16, 'DRSZones': 2, 'StdLapTime': 85},
 }
 
+# Approximate circuit coordinates used for live weather lookups
+CIRCUIT_COORDS = {
+    'Bahrain Grand Prix': (26.0325, 50.5106),
+    'Saudi Arabian Grand Prix': (21.6319, 39.1044),
+    'Australian Grand Prix': (-37.8497, 144.9680),
+    'Japanese Grand Prix': (34.8431, 136.5419),
+    'Chinese Grand Prix': (31.3389, 121.2197),
+    'Miami Grand Prix': (25.9581, -80.2389),
+    'Emilia Romagna Grand Prix': (44.3439, 11.7167),
+    'Monaco Grand Prix': (43.7347, 7.4200),
+    'Canadian Grand Prix': (45.5000, -73.5228),
+    'Spanish Grand Prix': (41.5700, 2.2600),
+    'Austrian Grand Prix': (47.2197, 14.7647),
+    'British Grand Prix': (52.0786, -1.0169),
+    'Hungarian Grand Prix': (47.5789, 19.2486),
+    'Belgian Grand Prix': (50.4372, 5.9713),
+    'Dutch Grand Prix': (52.3889, 4.5400),
+    'Italian Grand Prix': (45.6156, 9.2811),
+    'Azerbaijan Grand Prix': (40.3725, 49.8533),
+    'Singapore Grand Prix': (1.2914, 103.8630),
+    'United States Grand Prix': (30.1328, -97.6411),
+    'Mexican Grand Prix': (19.4042, -99.0906),
+    'Brazilian Grand Prix': (-23.7036, -46.6997),
+    'Las Vegas Grand Prix': (36.1215, -115.1694),
+    'Qatar Grand Prix': (25.4900, 51.4540),
+    'Abu Dhabi Grand Prix': (24.4672, 54.6030),
+}
+
+
+def fetch_weather(circuit: str, api_key: str | None = None) -> dict | None:
+    """Return a short-range weather forecast for the given circuit.
+
+    Parameters
+    ----------
+    circuit : str
+        Circuit name matching keys in ``CIRCUIT_COORDS``.
+    api_key : str | None
+        OpenWeatherMap API key. If ``None`` the ``OPENWEATHER_API_KEY``
+        environment variable is used.
+
+    Returns
+    -------
+    dict | None
+        Dictionary with ``ForecastAirTemp`` and ``ForecastPrecipChance`` or
+        ``None`` if the request fails.
+    """
+    api_key = api_key or os.getenv("OPENWEATHER_API_KEY")
+    coords = CIRCUIT_COORDS.get(circuit)
+    if not api_key or not coords:
+        return None
+    try:
+        resp = requests.get(
+            "https://api.openweathermap.org/data/2.5/forecast",
+            params={"lat": coords[0], "lon": coords[1], "appid": api_key, "units": "metric"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        temps = []
+        pops = []
+        for item in data.get("list", []):
+            main = item.get("main", {})
+            if "temp" in main:
+                temps.append(main["temp"])
+            pops.append(item.get("pop", 0))
+        if temps:
+            air = float(np.mean(temps))
+            rain = float(np.max(pops)) if pops else 0.0
+            return {
+                "ForecastAirTemp": air,
+                "ForecastPrecipChance": rain,
+            }
+    except Exception as err:  # pragma: no cover - network call
+        print(f"⚠️ Failed to fetch weather: {err}")
+    return None
+
 
 def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     """Return a cleaned historical dataset for model training.
@@ -1123,11 +1199,23 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         default_fp3 = fp3_results['FP3BestTime'].mean()
         default_fp3_long = fp3_results['FP3LongRunTime'].mean()
     else:
-        default_air = race_data['AirTemp'].mean()
-        default_track = race_data['TrackTemp'].mean()
-        default_rain = race_data['Rainfall'].median()
+        forecast = fetch_weather(grand_prix)
+        hist_air = race_data['AirTemp'].mean()
+        hist_track = race_data['TrackTemp'].mean()
+        hist_rain = race_data['Rainfall'].median()
         default_fp3 = race_data['FP3BestTime'].mean()
         default_fp3_long = race_data['FP3LongRunTime'].mean()
+        if forecast:
+            f_air = forecast['ForecastAirTemp']
+            f_track = f_air + 10  # rough approximation
+            f_rain = forecast['ForecastPrecipChance']
+            default_air = (f_air + hist_air) / 2
+            default_track = (f_track + hist_track) / 2
+            default_rain = (f_rain + hist_rain) / 2
+        else:
+            default_air = hist_air
+            default_track = hist_track
+            default_rain = hist_rain
     default_overtake = race_data['WeightedAvgOvertakes'].mean()
 
     # Determine the round number for the target event so season-based

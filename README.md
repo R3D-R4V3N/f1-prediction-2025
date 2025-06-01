@@ -7,6 +7,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 - **Race prediction** using a single XGBoost model.
 - **Automatic team and driver handling** for 2025 line‑ups, including rookies.
 - **Weather and circuit statistics** such as air/track temperature and estimated overtakes per circuit.
+- **Live weather forecasts** blended with historical averages when an `OPENWEATHER_API_KEY` is provided.
 - **Historical performance metrics** like driver experience, recent form and track specific results.
 - **Sprint form** including finishing positions from sprint races when applicable.
 - **Streamlit web interface** to quickly run predictions for any Grand Prix.
@@ -39,6 +40,7 @@ Install the dependencies with:
 ```bash
 pip install fastf1 pandas numpy scikit-learn matplotlib seaborn optuna xgboost streamlit
 ```
+If you want live weather predictions, set the `OPENWEATHER_API_KEY` environment variable to your OpenWeatherMap API key.
 
 ## Running Predictions
 
