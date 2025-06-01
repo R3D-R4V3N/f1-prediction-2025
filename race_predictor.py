@@ -772,6 +772,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'TeamRecentFinish', 'TeamReliability',
         'DriverChampPoints', 'ConstructorChampPoints',
         'DriverStanding', 'ConstructorStanding',
+        'CircuitLength', 'IsStreet', 'DownforceLevel',
         'AirTemp', 'TrackTemp', 'Rainfall', 'AverageOvertakes'
     ]
 
@@ -875,6 +876,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     is_street_val = 1 if track_type_val == 'street' else 0
     downforce_val = DOWNFORCE.get(grand_prix, 'medium')
     downforce_level_val = df_level_map.get(downforce_val, 1)
+    circuit_length_val = circuit_lengths.get(grand_prix, np.nan)
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
@@ -1039,6 +1041,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'ConstructorChampPoints': constructor_pts_map.get(d['Team'], 0.0),
             'DriverStanding': int(driver_stand_map.get(d['DriverNumber'], 0)),
             'ConstructorStanding': int(constructor_stand_map.get(d['Team'], 0)),
+            'CircuitLength': circuit_length_val,
+            'IsStreet': is_street_val,
+            'DownforceLevel': downforce_level_val,
             'AirTemp': default_air,
             'TrackTemp': default_track,
             'Rainfall': default_rain,
