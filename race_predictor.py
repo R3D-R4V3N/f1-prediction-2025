@@ -566,7 +566,14 @@ def _engineer_features(full_data):
     return full_data
 
 
-def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=None, top_circuits=None):
+def _prepare_features(
+    full_data,
+    base_cols,
+    team_encoder=None,
+    circuit_encoder=None,
+    top_circuits=None,
+    top_teams=None,
+):
     """Encode categorical features and return a design matrix.
 
     Parameters
@@ -578,7 +585,11 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
     team_encoder, circuit_encoder : OneHotEncoder or None
         Encoders to use. If ``None`` new encoders will be fitted.
     top_circuits : list or None
-        Subset of circuit columns to keep. If ``None`` the 15 most frequent circuits are used.
+        Subset of circuit columns to keep. If ``None`` the 10 most frequent
+        circuits are used.
+    top_teams : list or None
+        Subset of team columns to keep. If ``None`` the 12 most frequent teams
+        are used.
 
     Returns
     -------
@@ -590,6 +601,8 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
         Fitted circuit encoder.
     top_circuits : list
         Names of the circuit columns that were kept.
+    top_teams : list
+        Names of the team columns that were kept.
     """
 
     full_data = full_data.copy()
@@ -602,17 +615,27 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
 
     if full_data.empty:
         team_cols = (
-            team_encoder.get_feature_names_out(["Team"]) if team_encoder else []
+            team_encoder.get_feature_names_out(["TeamGrp"]).tolist()
+            if team_encoder
+            else []
         )
+        team_cols = [c.replace("TeamGrp_", "Team_") for c in team_cols]
         circuit_cols = (
-            circuit_encoder.get_feature_names_out(["Circuit"])
+            circuit_encoder.get_feature_names_out(["CircuitGrp"]).tolist()
             if circuit_encoder
             else []
         )
+        circuit_cols = [c.replace("CircuitGrp_", "Circuit_") for c in circuit_cols]
         if top_circuits is not None:
             circuit_cols = [c for c in circuit_cols if c in top_circuits]
-        empty_cols = base_cols + list(team_cols) + list(circuit_cols)
-        return pd.DataFrame(columns=empty_cols), team_encoder, circuit_encoder, top_circuits
+        empty_cols = base_cols + team_cols + circuit_cols
+        return (
+            pd.DataFrame(columns=empty_cols),
+            team_encoder,
+            circuit_encoder,
+            top_circuits,
+            top_teams,
+        )
 
     # ``Team`` or ``Circuit`` columns may be missing if the calling code fails to
     # merge driver or event details correctly.  Rather than raising a KeyError
@@ -634,24 +657,51 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
     # missing values on the model while keeping feature scales realistic.
     full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
 
+    if top_teams is None:
+        top_teams = (
+            full_data["Team"].value_counts().nlargest(12).index.tolist()
+        )
+
+    full_data["TeamGrp"] = np.where(
+        full_data["Team"].isin(top_teams), full_data["Team"], "Other"
+    )
+
     if team_encoder is None:
-        team_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-        team_encoded = team_encoder.fit_transform(full_data[['Team']])
+        team_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+        team_encoded = team_encoder.fit_transform(full_data[["TeamGrp"]])
     else:
-        team_encoded = team_encoder.transform(full_data[['Team']])
-    team_df = pd.DataFrame(team_encoded, columns=team_encoder.get_feature_names_out(['Team']))
+        team_encoded = team_encoder.transform(full_data[["TeamGrp"]])
+    team_df = pd.DataFrame(
+        team_encoded, columns=team_encoder.get_feature_names_out(["TeamGrp"])
+    )
+    team_df.columns = [c.replace("TeamGrp_", "Team_") for c in team_df.columns]
+
+    if top_circuits is None:
+        top_circuits = (
+            full_data["Circuit"].value_counts().nlargest(10).index.tolist()
+        )
+
+    full_data["CircuitGrp"] = np.where(
+        full_data["Circuit"].isin(top_circuits), full_data["Circuit"], "Other"
+    )
 
     if circuit_encoder is None:
-        circuit_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-        circuit_encoded = circuit_encoder.fit_transform(full_data[['Circuit']])
-        circuit_df = pd.DataFrame(circuit_encoded, columns=circuit_encoder.get_feature_names_out(['Circuit']))
-        if top_circuits is None:
-            top_circuits = circuit_df.sum().sort_values(ascending=False).head(15).index
+        circuit_encoder = OneHotEncoder(
+            handle_unknown="ignore", sparse_output=False
+        )
+        circuit_encoded = circuit_encoder.fit_transform(full_data[["CircuitGrp"]])
     else:
-        circuit_encoded = circuit_encoder.transform(full_data[['Circuit']])
-        circuit_df = pd.DataFrame(circuit_encoded, columns=circuit_encoder.get_feature_names_out(['Circuit']))
+        circuit_encoded = circuit_encoder.transform(full_data[["CircuitGrp"]])
+    circuit_df = pd.DataFrame(
+        circuit_encoded, columns=circuit_encoder.get_feature_names_out(["CircuitGrp"])
+    )
+    circuit_df.columns = [c.replace("CircuitGrp_", "Circuit_") for c in circuit_df.columns]
+
     if top_circuits is not None:
-        circuit_df = circuit_df.reindex(columns=top_circuits, fill_value=0)
+        circuit_cols = [f"Circuit_{c}" for c in top_circuits]
+        if f"Circuit_Other" in circuit_df.columns:
+            circuit_cols.append("Circuit_Other")
+        circuit_df = circuit_df.reindex(columns=circuit_cols, fill_value=0)
 
     features = pd.concat([
         full_data[base_cols].reset_index(drop=True),
@@ -659,11 +709,25 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
         circuit_df.reset_index(drop=True)
     ], axis=1)
 
-    return features, team_encoder, circuit_encoder, top_circuits
+    return features, team_encoder, circuit_encoder, top_circuits, top_teams
 
 
-def _encode_features(full_data, base_cols, team_encoder=None, circuit_encoder=None, top_circuits=None):
-    return _prepare_features(full_data, base_cols, team_encoder, circuit_encoder, top_circuits)
+def _encode_features(
+    full_data,
+    base_cols,
+    team_encoder=None,
+    circuit_encoder=None,
+    top_circuits=None,
+    top_teams=None,
+):
+    return _prepare_features(
+        full_data,
+        base_cols,
+        team_encoder,
+        circuit_encoder,
+        top_circuits,
+        top_teams,
+    )
 
 
 def _train_model(features, target, cv, debug=False):
@@ -782,20 +846,33 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     train_df = race_data[race_data['Season'] < holdout_year]
     holdout_mae = None
     if not holdout_df.empty and not train_df.empty:
-        ho_feat, ho_team_enc, ho_circ_enc, ho_top_circuits = _encode_features(
-            train_df, race_cols
-        )
-        ho_val_feat, _, _, _ = _encode_features(
-            holdout_df, race_cols, ho_team_enc, ho_circ_enc, ho_top_circuits
+        (
+            ho_feat,
+            ho_team_enc,
+            ho_circ_enc,
+            ho_top_circuits,
+            ho_top_teams,
+        ) = _encode_features(train_df, race_cols)
+        ho_val_feat, _, _, _, _ = _encode_features(
+            holdout_df,
+            race_cols,
+            ho_team_enc,
+            ho_circ_enc,
+            ho_top_circuits,
+            ho_top_teams,
         )
         cv_ho = TimeSeriesSplit(n_splits=5)
         ho_model, _ = _train_model(ho_feat, train_df['Position'], cv_ho, debug)
         ho_preds = ho_model.predict(ho_val_feat)
         holdout_mae = mean_absolute_error(holdout_df['Position'], ho_preds)
     # Encode features for the race model
-    features, team_enc, circuit_enc, top_circuits = _encode_features(
-        race_data, race_cols
-    )
+    (
+        features,
+        team_enc,
+        circuit_enc,
+        top_circuits,
+        top_teams,
+    ) = _encode_features(race_data, race_cols)
     # Align feature order with the chronological race data just to be safe
     features = features.loc[race_data.index].reset_index(drop=True)
 
@@ -1084,12 +1161,13 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Encode the prediction rows using the same helper as for training. This
     # converts numerical columns to proper dtypes and creates aligned one-hot
     # encoded team and circuit features.
-    race_pred_features, _, _, _ = _encode_features(
+    race_pred_features, _, _, _, _ = _encode_features(
         pred_df.assign(Circuit=grand_prix),
         race_cols,
         team_enc,
         circuit_enc,
         top_circuits,
+        top_teams,
     )
 
     # Ensure the column order matches the training feature matrix. Missing
