@@ -301,9 +301,11 @@ def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _load_historical_data(seasons, overtake_map=None):
+def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
+    """Return race results up to the given round for each season."""
     if overtake_map is None:
         overtake_map = OVERTAKE_AVERAGES
+    max_round_by_season = max_round_by_season or {}
     race_data = []
     for season in seasons:
         try:
@@ -311,6 +313,9 @@ def _load_historical_data(seasons, overtake_map=None):
             rounds = schedule["RoundNumber"].dropna().unique()
         except Exception:
             continue
+        if season in max_round_by_season:
+            limit = max_round_by_season[season]
+            rounds = [r for r in rounds if int(r) <= limit]
         for rnd in sorted(rounds):
             rnd = int(rnd)
             try:

@@ -54,22 +54,17 @@ class SeasonSplit:
         return max(0, len(self.seasons) - 1)
 
 
-def predict_race(grand_prix, year=2025, export_details=False, debug=False, compute_overtakes=True, retrain=False):
+def predict_race(
+    grand_prix,
+    year=2025,
+    export_details=False,
+    debug=False,
+    compute_overtakes=True,
+    retrain=False,
+):
     cache_model_path = f"cache/model_{year}.pkl"
     cache_data_path = f"cache/race_data_{year}.parquet"
 
-    if os.path.exists(cache_model_path) and not retrain:
-        model = pickle.load(open(cache_model_path, "rb"))
-        if os.path.exists(cache_data_path):
-            race_data = pd.read_parquet(cache_data_path)
-        else:
-            seasons = list(range(2021, year + 1))
-            overtake_map = _load_overtake_stats()
-            race_data = _load_historical_data(seasons, overtake_map)
-            race_data = _engineer_features(race_data)
-            race_data.to_parquet(cache_data_path)
-        logger.info("Loaded cached model and data for %s %d", grand_prix, year)
-        return _predict_with_existing_model(model, race_data, grand_prix, year)
     schedule = fastf1.get_event_schedule(year)
     match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
     if match.empty:
@@ -78,6 +73,21 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     event_date = pd.to_datetime(match.iloc[0].get("EventDate"), errors="coerce")
     event_month = event_date.month
     event_day = event_date.day
+
+    limit_rounds = {year: this_race_number - 1}
+
+    if os.path.exists(cache_model_path) and not retrain:
+        model = pickle.load(open(cache_model_path, "rb"))
+        if os.path.exists(cache_data_path):
+            race_data = pd.read_parquet(cache_data_path)
+        else:
+            seasons = list(range(2021, year + 1))
+            overtake_map = _load_overtake_stats()
+            race_data = _load_historical_data(seasons, overtake_map, limit_rounds)
+            race_data = _engineer_features(race_data)
+            race_data.to_parquet(cache_data_path)
+        logger.info("Loaded cached model and data for %s %d", grand_prix, year)
+        return _predict_with_existing_model(model, race_data, grand_prix, year)
 
     seasons = list(range(2021, year + 1))
 
@@ -92,7 +102,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
                 "Could not compute overtakes for %s: %s", grand_prix, err
             )
 
-    race_data = _load_historical_data(seasons, overtake_map)
+    race_data = _load_historical_data(seasons, overtake_map, limit_rounds)
     race_data = _clean_historical_data(race_data).reset_index(drop=True)
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
     qual_results = None
