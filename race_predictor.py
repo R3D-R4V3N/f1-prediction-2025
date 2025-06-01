@@ -801,13 +801,24 @@ def _engineer_features(full_data):
 
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
-    # Use the median rainfall rather than ``0`` to avoid treating missing
-    # data as a completely dry event which could bias the model.
+
+    # Flag missing rainfall values and impute using the circuit-specific median
+    # before falling back to the global median. This avoids biasing all missing
+    # values toward a dry event while still providing a sensible default.
+    full_data['RainfallMissing'] = full_data['Rainfall'].isna().astype(int)
+    circuit_rain = full_data.groupby('Circuit')['Rainfall'].transform('median')
+    full_data['Rainfall'] = full_data['Rainfall'].fillna(circuit_rain)
     full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
     full_data['WeightedAvgOvertakes'] = full_data['WeightedAvgOvertakes'].fillna(
         full_data['WeightedAvgOvertakes'].mean()
     )
-    full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
+
+    # Preserve information about missing qualifying times so the model can
+    # learn that a driver failed to set a lap.
+    full_data['MissedQuali'] = full_data['BestQualiTime'].isna().astype(int)
+    full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(
+        full_data['BestQualiTime'].median()
+    )
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
     full_data['FP3LongRunTime'] = full_data['FP3LongRunTime'].fillna(full_data['FP3LongRunTime'].mean())
@@ -1164,7 +1175,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Feature sets
     race_cols = [
         'GridPosition', 'Season', 'ExperienceCount', 'IsRookie', 'TeamAvgPosition',
-        'CrossAvgFinish', 'RecentAvgPoints', 'BestQualiTime',
+        'CrossAvgFinish', 'RecentAvgPoints', 'BestQualiTime', 'MissedQuali',
         'QualiPosition', 'FP3BestTime', 'FP3LongRunTime', 'DeltaToBestQuali',
         'DeltaToNext', 'SprintFinish',
         'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
@@ -1174,7 +1185,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'DriverStanding', 'ConstructorStanding', 'PrevYearConstructorRank',
         'CircuitLength', 'NumCorners', 'DRSZones', 'StdLapTime',
         'IsStreet', 'DownforceLevel',
-        'AirTemp', 'TrackTemp', 'Rainfall', 'WeightedAvgOvertakes'
+        'AirTemp', 'TrackTemp', 'Rainfall', 'RainfallMissing', 'WeightedAvgOvertakes'
     ]
 
     # Hold-out evaluation on the last completed season
@@ -1246,10 +1257,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         fp3_results = None
 
     if qual_results is not None and not qual_results.empty:
-        default_best_q = qual_results['BestTime'].mean()
+        default_best_q = qual_results['BestTime'].median()
         default_delta_next = qual_results['DeltaToNext'].mean()
     else:
-        default_best_q = race_data['BestQualiTime'].mean()
+        default_best_q = race_data['BestQualiTime'].median()
         default_delta_next = race_data['DeltaToNext'].mean()
 
     if fp3_results is not None and not fp3_results.empty:
@@ -1558,9 +1569,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         pd.to_numeric(pred_df['QualiPosition'], errors='coerce')
         .fillna(20)
     )
-    pred_df['BestQualiTime'] = (
-        pd.to_numeric(pred_df['BestQualiTime'], errors='coerce')
-        .fillna(race_data['BestQualiTime'].mean())
+    pred_df['BestQualiTime'] = pd.to_numeric(pred_df['BestQualiTime'], errors='coerce')
+    pred_df['MissedQuali'] = pred_df['BestQualiTime'].isna().astype(int)
+    pred_df['BestQualiTime'] = pred_df['BestQualiTime'].fillna(
+        race_data['BestQualiTime'].median()
     )
     pred_df['FP3BestTime'] = (
         pd.to_numeric(pred_df['FP3BestTime'], errors='coerce')
@@ -1586,6 +1598,13 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         pd.to_numeric(pred_df['StdLapTime'], errors='coerce')
         .fillna(race_data['StdLapTime'].mean())
     )
+
+    pred_df['Rainfall'] = pd.to_numeric(pred_df['Rainfall'], errors='coerce')
+    pred_df['RainfallMissing'] = pred_df['Rainfall'].isna().astype(int)
+    circ_rain_map = race_data.groupby('Circuit')['Rainfall'].median()
+    circuit_rain = circ_rain_map.get(grand_prix, race_data['Rainfall'].median())
+    pred_df['Rainfall'] = pred_df['Rainfall'].fillna(circuit_rain)
+    pred_df['Rainfall'] = pred_df['Rainfall'].fillna(race_data['Rainfall'].median())
 
     # Save the driver list so the raw input fed to the model can be inspected.
     pred_df.to_csv("prediction_input.csv", index=False)
