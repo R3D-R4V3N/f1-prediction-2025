@@ -56,6 +56,19 @@ def _fetch_session_data(
             .reset_index()
             .rename(columns={'LapTime': 'BestTime'})
         )
+        laps = session.laps
+        if not laps.empty:
+            max_lap = laps['LapNumber'].max()
+            long_runs = laps[laps['LapNumber'] >= max_lap - 4]
+            long_avg = (
+                long_runs.groupby('Driver')['LapTime']
+                .apply(lambda s: s.dt.total_seconds().mean())
+                .reset_index()
+                .rename(columns={'LapTime': 'LongRunTime'})
+            )
+            df = df.merge(long_avg, on='Driver', how='left')
+        else:
+            df['LongRunTime'] = None
     elif session_code == 'Q':
         df = session.results[['Abbreviation', 'Q1', 'Q2', 'Q3']].copy()
         for col in ['Q1', 'Q2', 'Q3']:
@@ -92,6 +105,7 @@ def _fetch_session_data(
             'Date',
             'Driver',
             'BestTime',
+            'LongRunTime',
             'FinishPosition',
             'Q1',
             'Q2',
