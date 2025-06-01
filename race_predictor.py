@@ -192,8 +192,18 @@ def _load_historical_data(seasons, overtake_map=None):
         overtake_map = OVERTAKE_AVERAGES
     race_data = []
     for season in seasons:
-        for rnd in range(1, 23):
+        # Build the list of rounds from the official event schedule so the
+        # function adapts to seasons with a varying number of races.
+        try:
+            schedule = fastf1.get_event_schedule(season)
+            rounds = schedule["RoundNumber"].dropna().unique()
+        except Exception:
+            # Skip the season entirely if the schedule cannot be retrieved
+            continue
+        for rnd in sorted(rounds):
+            rnd = int(rnd)
             try:
+                # Skip the round if data is missing (e.g. cancelled races)
                 # Race session
                 session = fastf1.get_session(season, rnd, 'R')
                 session.load()
