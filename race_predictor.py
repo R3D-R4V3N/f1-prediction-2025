@@ -688,12 +688,18 @@ def _train_model(features, target, cv, debug=False):
 
     def objective(trial):
         params = {
-            'n_estimators': trial.suggest_int('n_estimators', 200, 600),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
-            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+            'n_estimators': trial.suggest_int('n_estimators', 300, 800),
+            'max_depth': trial.suggest_categorical('max_depth', [3, 5, 7, 9]),
+            'learning_rate': trial.suggest_categorical(
+                'learning_rate', [0.01, 0.05, 0.1, 0.2]
+            ),
+            'subsample': trial.suggest_categorical('subsample', [0.6, 0.8, 1.0]),
+            'colsample_bytree': trial.suggest_categorical(
+                'colsample_bytree', [0.6, 0.8, 1.0]
+            ),
+            'min_child_weight': trial.suggest_categorical(
+                'min_child_weight', [1, 3, 5, 7, 10]
+            ),
         }
         model = XGBRegressor(
             objective='reg:squarederror',
@@ -709,7 +715,7 @@ def _train_model(features, target, cv, debug=False):
         return np.mean(scores)
 
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=20, show_progress_bar=False)
+    study.optimize(objective, n_trials=60, show_progress_bar=False)
     best_params = study.best_params
     best_score = study.best_value
     model = XGBRegressor(
@@ -725,7 +731,7 @@ def _train_model(features, target, cv, debug=False):
 
 
 def predict_race(grand_prix, year=2025, export_details=False, debug=False, compute_overtakes=True):
-    seasons = list(range(2020, year + 1))
+    seasons = list(range(2020, year))
 
     overtake_map = _load_overtake_stats()
     if compute_overtakes:
@@ -767,6 +773,23 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'DriverChampPoints', 'ConstructorChampPoints',
         'DriverStanding', 'ConstructorStanding'
     ]
+
+    # Hold-out evaluation on the last completed season
+    holdout_year = year - 1
+    holdout_df = race_data[race_data['Season'] == holdout_year]
+    train_df = race_data[race_data['Season'] < holdout_year]
+    holdout_mae = None
+    if not holdout_df.empty and not train_df.empty:
+        ho_feat, ho_team_enc, ho_circ_enc, ho_top_circuits = _encode_features(
+            train_df, race_cols
+        )
+        ho_val_feat, _, _, _ = _encode_features(
+            holdout_df, race_cols, ho_team_enc, ho_circ_enc, ho_top_circuits
+        )
+        cv_ho = TimeSeriesSplit(n_splits=5)
+        ho_model, _ = _train_model(ho_feat, train_df['Position'], cv_ho, debug)
+        ho_preds = ho_model.predict(ho_val_feat)
+        holdout_mae = mean_absolute_error(holdout_df['Position'], ho_preds)
     # Encode features for the race model
     features, team_enc, circuit_enc, top_circuits = _encode_features(
         race_data, race_cols
@@ -774,7 +797,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Align feature order with the chronological race data just to be safe
     features = features.loc[race_data.index].reset_index(drop=True)
 
-    cv = TimeSeriesSplit(n_splits=3)
+    cv = TimeSeriesSplit(n_splits=5)
 
     # Train race finish model
     target = race_data['Position']
@@ -1080,7 +1103,12 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             print(f"📁 Saved session data to {detail_path}")
         except Exception as err:
             print(f"⚠️ Could not export session data: {err}")
-    print(f"📊 CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
+    if holdout_mae is not None:
+        print(
+            f"📊 CV MAE: {cv_mae:.2f} -- Hold-out MAE: {holdout_mae:.2f} -- Training MAE: {finish_mae:.2f}"
+        )
+    else:
+        print(f"📊 CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
     return results
 
 
