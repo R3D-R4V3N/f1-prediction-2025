@@ -812,6 +812,23 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     except Exception:
         circuit_lengths = {grand_prix: np.nan}
 
+    TRACK_TYPE = {
+        'Monaco Grand Prix': 'street',
+        'Singapore Grand Prix': 'street',
+        'Las Vegas Grand Prix': 'street',
+    }
+    DOWNFORCE = {
+        'Monaco Grand Prix': 'high',
+        'Hungarian Grand Prix': 'high',
+        'Italian Grand Prix': 'low',
+        'Belgian Grand Prix': 'low',
+    }
+    df_level_map = {'low': 0, 'medium': 1, 'high': 2}
+    track_type_val = TRACK_TYPE.get(grand_prix, 'permanent')
+    is_street_val = 1 if track_type_val == 'street' else 0
+    downforce_val = DOWNFORCE.get(grand_prix, 'medium')
+    downforce_level_val = df_level_map.get(downforce_val, 1)
+
     # Prepare prediction dataframe for all drivers
     pred_rows = []
     team_strength = (
@@ -954,8 +971,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'DriverStanding': 0,
             'ConstructorStanding': 0,
             'CircuitLength': circuit_lengths.get(grand_prix, np.nan) if 'circuit_lengths' in locals() else np.nan,
-            'IsStreet': 1 if grand_prix in ['Monaco Grand Prix','Singapore Grand Prix','Las Vegas Grand Prix'] else 0,
-            'DownforceLevel': 1,
+            'IsStreet': is_street_val,
+            'DownforceLevel': downforce_level_val,
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
