@@ -731,34 +731,12 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     race_data = _clean_historical_data(race_data).reset_index(drop=True)
     # Ensure DriverNumber is numeric for consistent merging
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
+    # Placeholder for qualifying and FP3 results of the target event.
     qual_results = None
     fp3_results = None
-    try:
-        drivers_df = _get_qualifying_results(year, grand_prix)
-        drivers_df = drivers_df[drivers_df['BestTime'].notna()]
-        qual_results = drivers_df.copy()
-    except Exception:
-        drivers_df = _get_event_drivers(year, grand_prix)
-
-    drivers_df['DriverNumber'] = pd.to_numeric(drivers_df['DriverNumber'], errors='coerce')
-
-    # Avoid duplicate GridPosition columns when merging qualifying data with
-    # historical results.  If drivers_df contains ``GridPosition`` we preserve
-    # it by filling missing values in the historical column and then drop the
-    # suffix column created by ``merge``.
-    race_data = pd.merge(
-        race_data,
-        drivers_df,
-        on='DriverNumber',
-        how='left',
-        suffixes=('', '_driver'),
-    )
-    if 'GridPosition_driver' in race_data.columns:
-        race_data['GridPosition'] = race_data['GridPosition'].fillna(
-            race_data['GridPosition_driver']
-        )
-        race_data.drop(columns=['GridPosition_driver'], inplace=True)
     race_data = _add_driver_team_info(race_data, seasons)
+    # Use the historical team as the team label for training features
+    race_data['Team'] = race_data['HistoricalTeam']
     race_data = _engineer_features(race_data)
     # Save the engineered dataset used for training and prediction so users can
     # inspect all input values.
@@ -788,6 +766,17 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     finish_preds_hist = model.predict(features)
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
+
+    # Now fetch the driver line-up and session data for the target event
+    try:
+        drivers_df = _get_qualifying_results(year, grand_prix)
+        drivers_df = drivers_df[drivers_df['BestTime'].notna()]
+        qual_results = drivers_df.copy()
+    except Exception:
+        drivers_df = _get_event_drivers(year, grand_prix)
+        qual_results = None
+
+    drivers_df['DriverNumber'] = pd.to_numeric(drivers_df['DriverNumber'], errors='coerce')
 
     # Retrieve FP3 results now so default values include real session data if
     # available.
@@ -897,26 +886,6 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
     ]
 
-    if qual_results is None:
-        try:
-            qual_results = _get_qualifying_results(year, grand_prix)
-            if not drivers_df.empty:
-                qual_results = qual_results.merge(
-                    drivers_df[['Abbreviation', 'FullName', 'Team', 'DriverNumber']],
-                    on='Abbreviation',
-                    how='left'
-                )
-            qual_results = qual_results[qual_results['BestTime'].notna()]
-        except Exception:
-            qual_results = None
-
-    if fp3_results is None:
-        try:
-            fp3_results = _get_fp3_results(year, grand_prix)
-            if qual_results is not None:
-                qual_results = qual_results.merge(fp3_results, on='Abbreviation', how='left')
-        except Exception:
-            fp3_results = None
 
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results['BestTime'].min()
