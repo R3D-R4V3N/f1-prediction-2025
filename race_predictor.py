@@ -767,16 +767,13 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Feature sets
     race_cols = [
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
-        'RecentAvgPosition', 'RecentAvgPoints', 'AirTemp', 'TrackTemp',
-        'Rainfall', 'AverageOvertakes', 'BestQualiTime',
+        'RecentAvgPosition', 'RecentAvgPoints', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'DeltaToBestQuali',
-        'DeltaToTeammateQuali',
-        'GridDropCount', 'QualiSessionGain', 'Recent3AvgFinish',
-        'Recent5AvgFinish', 'DriverAvgTrackFinish',
+        'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
-        'TeamRecentFinish', 'TeamReliability', 'IsStreet',
-        'DownforceLevel', 'DriverChampPoints', 'ConstructorChampPoints',
-        'DriverStanding', 'ConstructorStanding', 'CircuitLength'
+        'TeamRecentFinish', 'TeamReliability',
+        'DriverChampPoints', 'ConstructorChampPoints',
+        'DriverStanding', 'ConstructorStanding'
     ]
     # Encode features for the race model
     features, team_enc, circuit_enc, top_circuits = _encode_features(
@@ -997,17 +994,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'TeamAvgPosition': team_avg_pos,
             'RecentAvgPosition': recent_avg_pos,
             'RecentAvgPoints': recent_avg_pts,
-            'AirTemp': default_air,
-            'TrackTemp': default_track,
-            'Rainfall': default_rain,
-            'AverageOvertakes': default_overtake,
             'BestQualiTime': best_time,
             'QualiPosition': grid_pos,
             'FP3BestTime': fp3_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
-            'DeltaToTeammateQuali': d.get('DeltaToTeammateQuali', 0),
-            'GridDropCount': d.get('GridDropCount', 0),
-            'QualiSessionGain': d.get('QualiSessionGain', 0),
             'Recent3AvgFinish': recent3_avg,
             'Recent5AvgFinish': recent5_avg,
             'DriverAvgTrackFinish': avg_track,
@@ -1020,9 +1010,6 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'ConstructorChampPoints': 0.0,
             'DriverStanding': 0,
             'ConstructorStanding': 0,
-            'CircuitLength': circuit_lengths.get(grand_prix, np.nan) if 'circuit_lengths' in locals() else np.nan,
-            'IsStreet': is_street_val,
-            'DownforceLevel': downforce_level_val,
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
