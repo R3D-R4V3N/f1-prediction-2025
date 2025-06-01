@@ -16,6 +16,11 @@ from xgboost import XGBRegressor, plot_importance
 import matplotlib.pyplot as plt
 import optuna
 
+try:
+    import shap  # type: ignore
+except Exception:
+    shap = None
+
 warnings.filterwarnings('ignore')
 
 # Create cache directory
@@ -1199,12 +1204,25 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     pred_features = race_pred_features.reindex(columns=features.columns, fill_value=0)
 
     preds = model.predict(pred_features)
+    shap_values = None
+    if debug and shap is not None:
+        try:
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(pred_features)
+        except Exception as err:
+            print(f"\u26a0\ufe0f Could not compute SHAP values: {err}")
+            shap_values = None
+
     results = pd.DataFrame({
         'Driver': pred_df['Abbreviation'],
         'Team': pred_df['Team'],
         'Grid': pred_df['GridPosition'],
         'Predicted_Position': preds
-    }).sort_values('Predicted_Position')
+    })
+    sort_idx = results['Predicted_Position'].argsort()
+    results = results.iloc[sort_idx].reset_index(drop=True)
+    if shap_values is not None:
+        shap_values = shap_values[sort_idx]
     results['Final_Position'] = range(1, len(results) + 1)
     # Save the final ordered predictions for transparency
     results.to_csv("prediction_results.csv", index=False)
@@ -1214,6 +1232,14 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             print(f"📁 Saved session data to {detail_path}")
         except Exception as err:
             print(f"⚠️ Could not export session data: {err}")
+    details = None
+    if debug:
+        details = {
+            'prediction_features': pred_features,
+            'shap_values': shap_values,
+            'feature_names': pred_features.columns.tolist(),
+        }
+
     if holdout_mae is not None:
         print(
             f"📊 CV MAE: {cv_mae:.2f} -- Hold-out MAE: {holdout_mae:.2f} -- Training MAE: {finish_mae:.2f}"
@@ -1229,7 +1255,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} -- "
             f"Top1: {train_rank['top1']*100:.0f}% -- Top3: {train_rank['top3']*100:.0f}%"
         )
-    return results
+    return (results, details) if debug else results
 
 
 if __name__ == '__main__':
