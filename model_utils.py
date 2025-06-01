@@ -25,12 +25,14 @@ def _train_model(features, target, cv, debug=False):
     """Train an XGBoost ranker using Bayesian optimisation."""
     def objective(trial):
         params = {
-            'n_estimators': trial.suggest_int('n_estimators', 300, 800),
-            'max_depth': trial.suggest_categorical('max_depth', [3, 5, 7, 9]),
-            'learning_rate': trial.suggest_categorical('learning_rate', [0.01, 0.05, 0.1, 0.2]),
-            'subsample': trial.suggest_categorical('subsample', [0.6, 0.8, 1.0]),
-            'colsample_bytree': trial.suggest_categorical('colsample_bytree', [0.6, 0.8, 1.0]),
-            'min_child_weight': trial.suggest_categorical('min_child_weight', [1, 3, 5, 7, 10]),
+            # use a large number of estimators and rely on early stopping to find the best value
+            'n_estimators': 1000,
+            'learning_rate': trial.suggest_loguniform('learning_rate', 0.005, 0.2),
+            'max_depth': trial.suggest_int('max_depth', 3, 10),
+            'subsample': trial.suggest_uniform('subsample', 0.5, 1.0),
+            'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0.5, 1.0),
+            'gamma': trial.suggest_loguniform('gamma', 1e-8, 1.0),
+            'min_child_weight': trial.suggest_int('min_child_weight', 0, 10),
         }
         model = XGBRanker(objective="rank:pairwise", random_state=42, **params)
         scores = []
@@ -64,7 +66,15 @@ def _train_model(features, target, cv, debug=False):
     best_score = study.best_value
     model = XGBRanker(objective="rank:pairwise", random_state=42, **best_params)
     full_group = features.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
-    model.fit(features, target, group=full_group)
+    model.fit(
+        features,
+        target,
+        group=full_group,
+        eval_set=[(features, target)],
+        eval_group=[full_group],
+        verbose=False,
+        early_stopping_rounds=20,
+    )
     if debug:
         plot_importance(model, max_num_features=10)
         plt.show()
