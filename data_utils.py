@@ -433,8 +433,15 @@ def _add_driver_team_info(full_data, seasons):
 
 def _engineer_features(full_data):
     full_data['Position'] = pd.to_numeric(full_data.get('Position'), errors='coerce').fillna(25)
-    full_data['GridPosition'] = pd.to_numeric(full_data.get('GridPosition'), errors='coerce').fillna(20)
-    full_data['GridPosition'] = full_data['GridPosition'].clip(1, 20)
+    grid_series = (
+        full_data['GridPosition'] if 'GridPosition' in full_data.columns
+        else pd.Series(nan, index=full_data.index)
+    )
+    full_data['GridPosition'] = (
+        pd.to_numeric(grid_series, errors='coerce')
+        .fillna(20)
+        .clip(1, 20)
+    )
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
@@ -739,11 +746,28 @@ def _engineer_features(full_data):
 
 def _prepare_features(
     full_data,
-    base_cols,
+    base_cols=None,
     team_encoder=None,
     circuit_encoder=None,
     top_circuits=None,
 ):
+    """Prepare numeric race features and encode categorical values.
+
+    When ``base_cols`` is omitted the function returns only the prepared
+    feature frame using :data:`race_cols` and leaves the encoders
+    unmanaged.  This matches the historical behaviour relied on by the
+    tests.  When ``base_cols`` is provided the function returns a tuple of
+    ``(features, team_encoder, circuit_encoder, top_circuits)``.
+    """
+    if base_cols is None:
+        features, _, _, _ = _prepare_features(
+            full_data,
+            race_cols,
+            team_encoder,
+            circuit_encoder,
+            top_circuits,
+        )
+        return features
     full_data = full_data.copy()
     if "HistoricalTeam" in full_data.columns:
         full_data["Team"] = full_data["HistoricalTeam"]
@@ -817,14 +841,15 @@ def _prepare_features(
 
 def _encode_features(
     full_data,
-    base_cols,
+    base_cols=None,
     team_encoder=None,
     circuit_encoder=None,
     top_circuits=None,
 ):
+    """Encode prepared features using provided or fitted encoders."""
     return _prepare_features(
         full_data,
-        base_cols,
+        base_cols or race_cols,
         team_encoder,
         circuit_encoder,
         top_circuits,
