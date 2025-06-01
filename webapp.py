@@ -37,7 +37,7 @@ def _load_actual_results(year: int, grand_prix: str):
 
 st.title('F1 2025 Race Predictor')
 
-year = st.sidebar.number_input('Season', min_value=2020, max_value=2025, value=2025)
+year = st.sidebar.number_input('Season', min_value=2021, max_value=2025, value=2025)
 debug_mode = st.sidebar.checkbox('Enable debug options')
 
 gp = st.selectbox('Select a Grand Prix', GRAND_PRIX_LIST)

@@ -63,7 +63,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         if os.path.exists(cache_data_path):
             race_data = pd.read_parquet(cache_data_path)
         else:
-            seasons = list(range(2020, year + 1))
+            seasons = list(range(2021, year + 1))
             overtake_map = _load_overtake_stats()
             race_data = _load_historical_data(seasons, overtake_map)
             race_data = _engineer_features(race_data)
@@ -79,12 +79,12 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     event_month = event_date.month
     event_day = event_date.day
 
-    seasons = list(range(2020, year + 1))
+    seasons = list(range(2021, year + 1))
 
     overtake_map = _load_overtake_stats()
     if compute_overtakes:
         try:
-            years_for_avg = list(range(max(2020, year - 3), year))
+            years_for_avg = list(range(max(2021, year - 3), year))
             avg = average_overtakes(grand_prix, years_for_avg)
             overtake_map[grand_prix] = avg
         except Exception as err:

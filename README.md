@@ -17,7 +17,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 
 ## How Predictions Work
 
-The model is trained on event data from the 2020‑2025 seasons. For each race it collects:
+The model is trained on event data from the 2021‑2025 seasons. For each race it collects:
 
 1. **Driver and team results** from FastF1 with fallbacks to the Ergast API.
 2. **Qualifying and practice times** for each driver, including the time gap to the next fastest qualifier.
