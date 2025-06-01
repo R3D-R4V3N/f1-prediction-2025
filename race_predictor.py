@@ -591,6 +591,12 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
 
     full_data = full_data.copy()
 
+    # Prefer the historic team name when both a current and historical team
+    # column are present.  This avoids leaking 2025 line-up information into the
+    # training features.
+    if "HistoricalTeam" in full_data.columns:
+        full_data["Team"] = full_data["HistoricalTeam"]
+
     if full_data.empty:
         team_cols = (
             team_encoder.get_feature_names_out(["Team"]) if team_encoder else []
@@ -735,8 +741,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     qual_results = None
     fp3_results = None
     race_data = _add_driver_team_info(race_data, seasons)
-    # Use the historical team as the team label for training features
-    race_data['Team'] = race_data['HistoricalTeam']
+    # Remove any existing current-season team column to avoid mixing with
+    # historical information. ``_prepare_features`` will internally use the
+    # ``HistoricalTeam`` column for encoding.
+    race_data = race_data.drop(columns=['Team'], errors='ignore')
     race_data = _engineer_features(race_data)
     # Save the engineered dataset used for training and prediction so users can
     # inspect all input values.
