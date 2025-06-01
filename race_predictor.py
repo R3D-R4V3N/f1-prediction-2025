@@ -486,6 +486,7 @@ def _engineer_features(full_data):
 
     full_data.sort_values(['DriverNumber', 'Season', 'RaceNumber'], inplace=True)
     full_data['ExperienceCount'] = full_data.groupby('DriverNumber').cumcount() + 1
+    full_data['IsRookie'] = (full_data['ExperienceCount'] == 1).astype(int)
     full_data['RaceIdxInSeason'] = (
         full_data.groupby(['Season', 'DriverNumber']).cumcount() + 1
     )
@@ -494,7 +495,12 @@ def _engineer_features(full_data):
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
         .reset_index(level=0, drop=True)
     )
-    full_data['CrossAvgFinish'] = full_data['CrossAvgFinish'].fillna(full_data['Position'].mean())
+    rookie_mean = full_data.loc[full_data['IsRookie'] == 1, 'Position'].mean()
+    overall_mean = full_data['Position'].mean()
+    full_data.loc[full_data['IsRookie'] == 1, 'CrossAvgFinish'] = (
+        full_data.loc[full_data['IsRookie'] == 1, 'CrossAvgFinish'].fillna(rookie_mean)
+    )
+    full_data['CrossAvgFinish'] = full_data['CrossAvgFinish'].fillna(overall_mean)
     full_data['Recent3AvgFinish'] = (
         full_data.groupby('DriverNumber')['Position']
         .apply(lambda s: s.shift().rolling(window=3, min_periods=1).mean())
@@ -927,7 +933,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     # Feature sets
     race_cols = [
-        'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
+        'GridPosition', 'Season', 'ExperienceCount', 'IsRookie', 'TeamAvgPosition',
         'CrossAvgFinish', 'RecentAvgPoints', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'FP3LongRunTime', 'DeltaToBestQuali',
         'DeltaToNext', 'SprintFinish',
@@ -1130,6 +1136,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
     overall_avg_pos = race_data['Position'].mean()
+    rookie_avg_pos = race_data[race_data['ExperienceCount'] == 1]['Position'].mean()
     for _, d in driver_iter.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']]) + 1
         team_name = d['Team']
@@ -1201,10 +1208,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         ].sort_values(['Season', 'RaceNumber'])
 
         if past_races.empty:
-            cross_avg = overall_avg_pos
+            cross_avg = rookie_avg_pos
             recent_avg_pts = 0.0
-            recent3_avg = overall_avg_pos
-            recent5_avg = overall_avg_pos
+            recent3_avg = rookie_avg_pos
+            recent5_avg = rookie_avg_pos
         else:
             cross_avg = past_races['Position'].tail(5).mean()
             recent_avg_pts = past_races['Points'].tail(5).mean()
@@ -1214,6 +1221,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'GridPosition': grid_pos,
             'Season': year,
             'ExperienceCount': exp_count,
+            'IsRookie': 1 if exp_count == 1 else 0,
             'TeamAvgPosition': team_avg_pos,
             'CrossAvgFinish': cross_avg,
             'RecentAvgPoints': recent_avg_pts,
