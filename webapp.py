@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from race_predictor import predict_race, GRAND_PRIX_LIST
+from predictor import predict_race
+from data_utils import GRAND_PRIX_LIST
 
 
 @st.cache_data(show_spinner=False)

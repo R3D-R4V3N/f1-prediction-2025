@@ -48,10 +48,10 @@ If you want live weather predictions, set the `OPENWEATHER_API_KEY` environment 
 1. **Single race prediction**
 
    ```bash
-   python race_predictor.py
+   python predictor.py
    ```
 
-   By default this runs `predict_race` for the Chinese Grand Prix in 2025. Edit the last lines of `race_predictor.py` or call the function from Python to choose another event.
+   By default this runs `predict_race` for the Chinese Grand Prix in 2025. Edit the last lines of `predictor.py` or call the function from Python to choose another event.
 
 2. **Streamlit web app**
 
@@ -97,7 +97,7 @@ hold-out evaluation the script also reports:
 
 ## Repository Structure
 
-- `race_predictor.py` – core prediction code.
+- `predictor.py` – core prediction orchestrator.
 - `webapp.py` – Streamlit interface.
 - `export_race_details.py` – utility to save detailed session CSVs.
 - `estimate_overtakes.py` – script to compute overtake statistics.
