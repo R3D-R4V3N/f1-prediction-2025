@@ -4,7 +4,7 @@ import warnings
 
 import fastf1
 import requests
-from export_race_details import export_race_details
+from export_race_details import export_race_details, _fetch_session_data
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
@@ -154,6 +154,19 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     q_res["BestTime"] = q_res[["Q1", "Q2", "Q3"]].min(axis=1)
     q_res.rename(columns={"Position": "GridPosition"}, inplace=True)
     return q_res
+
+
+def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
+    """Return FP3 best laps and weather information."""
+    schedule = fastf1.get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
+
+    round_number = int(match.iloc[0]["RoundNumber"])
+    df = _fetch_session_data(year, round_number, "FP3")
+    df = df.rename(columns={"Driver": "Abbreviation", "BestTime": "FP3BestTime"})
+    return df[["Abbreviation", "FP3BestTime", "AvgAirTemp", "AvgTrackTemp", "MaxRainfall"]]
 
 # Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
 OVERTAKE_DIFFICULTY = {
@@ -610,13 +623,24 @@ def predict_race(grand_prix, year=2025, export_details=False):
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
     features = race_feats_with_pred
 
-    default_air = race_data['AirTemp'].mean()
-    default_track = race_data['TrackTemp'].mean()
-    default_rain = 0.0
+    if qual_results is not None and not qual_results.empty:
+        default_best_q = qual_results['BestTime'].mean()
+        default_qpos = qual_results['GridPosition'].mean()
+    else:
+        default_best_q = race_data['BestQualiTime'].mean()
+        default_qpos = race_data['QualiPosition'].mean()
+
+    if fp3_results is not None and not fp3_results.empty:
+        default_air = fp3_results['AvgAirTemp'].mean()
+        default_track = fp3_results['AvgTrackTemp'].mean()
+        default_rain = fp3_results['MaxRainfall'].max()
+        default_fp3 = fp3_results['FP3BestTime'].mean()
+    else:
+        default_air = race_data['AirTemp'].mean()
+        default_track = race_data['TrackTemp'].mean()
+        default_rain = 0.0
+        default_fp3 = race_data['FP3BestTime'].mean()
     default_overtake = 3
-    default_best_q = race_data['BestQualiTime'].mean()
-    default_qpos = race_data['QualiPosition'].mean()
-    default_fp3 = race_data['FP3BestTime'].mean()
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
@@ -642,17 +666,26 @@ def predict_race(grand_prix, year=2025, export_details=False):
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
     ]
 
-    qual_results = None
-    if year == 2025:
-        try:
-            qual_results = _get_qualifying_results(year, grand_prix)
-            qual_results = qual_results.merge(
-                drivers_df[['Abbreviation', 'FullName', 'Team']], on='Abbreviation', how='left'
-            )
-        except Exception:
-            qual_results = None
+    try:
+        qual_results = _get_qualifying_results(year, grand_prix)
+        qual_results = qual_results.merge(
+            drivers_df[['Abbreviation', 'FullName', 'Team', 'DriverNumber']],
+            on='Abbreviation',
+            how='left'
+        )
+        qual_results = qual_results[qual_results['BestTime'].notna()]
+    except Exception:
+        qual_results = None
 
-    for _, d in drivers_df.iterrows():
+    try:
+        fp3_results = _get_fp3_results(year, grand_prix)
+        if qual_results is not None:
+            qual_results = qual_results.merge(fp3_results, on='Abbreviation', how='left')
+    except Exception:
+        fp3_results = None
+
+    driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
+    for _, d in driver_iter.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
         if exp_count == 0:
             exp_count = 1
@@ -680,17 +713,17 @@ def predict_race(grand_prix, year=2025, export_details=False):
             podiums = stats['DriverTrackPodiums']
             dnfs = stats['DriverTrackDNFs']
 
-        if qual_results is not None:
-            qrow = qual_results[qual_results['Abbreviation'] == d['Abbreviation']]
-            if not qrow.empty:
-                grid_pos = int(qrow.iloc[0]['GridPosition'])
-                best_time = qrow.iloc[0]['BestTime']
-            else:
-                grid_pos = np.nan
-                best_time = default_best_q
+        if qual_results is not None and 'GridPosition' in d and pd.notna(d['GridPosition']):
+            grid_pos = int(d['GridPosition'])
+            best_time = d['BestTime']
         else:
             grid_pos = np.nan
             best_time = default_best_q
+
+        if fp3_results is not None and 'FP3BestTime' in d and pd.notna(d['FP3BestTime']):
+            fp3_time = d['FP3BestTime']
+        else:
+            fp3_time = default_fp3
         pred_rows.append({
             'GridPosition': grid_pos,
             'Season': year,
@@ -704,7 +737,7 @@ def predict_race(grand_prix, year=2025, export_details=False):
             'OvertakingDifficulty': default_overtake,
             'BestQualiTime': best_time,
             'QualiPosition': grid_pos,
-            'FP3BestTime': default_fp3,
+            'FP3BestTime': fp3_time,
             'Recent3AvgFinish': 10.0,
             'Recent5AvgFinish': 10.0,
             'QualiImprove': 0.0,
