@@ -347,23 +347,20 @@ def _load_historical_data(seasons, overtake_map=None):
                         return min(times) if times else nan
 
                     q_results['BestQualiTime'] = q_results.apply(_best_time, axis=1)
-                    q_results = q_results.rename(columns={'Position': 'QualiPosition'})
                     q_results['Q3Time'] = q_results['Q3'].apply(
                         lambda x: pd.to_timedelta(x).total_seconds() if pd.notna(x) else nan
                     )
                     q_results['GridFromQ3'] = q_results['Q3Time'].rank(method='first')
                     results = pd.merge(
                         results,
-                        q_results[['DriverNumber', 'BestQualiTime', 'QualiPosition', 'GridFromQ3']],
+                        q_results[['DriverNumber', 'BestQualiTime', 'GridFromQ3']],
                         on='DriverNumber',
                         how='left'
                     )
                     if 'GridPosition' in results.columns:
-                        results['GridPosition'] = results['GridPosition'].fillna(results['QualiPosition'])
                         results['GridPosition'] = results['GridPosition'].fillna(results['GridFromQ3'])
                 except Exception:
                     results['BestQualiTime'] = nan
-                    results['QualiPosition'] = nan
                 try:
                     fp3_session = get_session(season, rnd, 'FP3')
                     fp3_session.load()
@@ -442,7 +439,6 @@ def _engineer_features(full_data):
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
     full_data['WeightedAvgOvertakes'] = pd.to_numeric(full_data.get('WeightedAvgOvertakes'), errors='coerce')
     full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
-    full_data['QualiPosition'] = pd.to_numeric(full_data.get('QualiPosition'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
     full_data['FP3LongRunTime'] = pd.to_numeric(full_data.get('FP3LongRunTime'), errors='coerce')
     full_data['SprintFinish'] = pd.to_numeric(full_data.get('SprintFinish'), errors='coerce').fillna(25)
@@ -537,7 +533,7 @@ def _engineer_features(full_data):
     ).reset_index()
     full_data = pd.merge(full_data, driver_track, on=['DriverNumber', 'Circuit'], how='left')
     full_data['TeamRecentQuali'] = (
-        full_data.groupby(['HistoricalTeam', 'Season'])['QualiPosition']
+        full_data.groupby(['HistoricalTeam', 'Season'])['GridPosition']
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
         .reset_index(level=[0, 1], drop=True)
     )
@@ -551,7 +547,7 @@ def _engineer_features(full_data):
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).sum())
         .reset_index(level=[0, 1], drop=True)
     )
-    full_data['TeamRecentQuali'] = full_data['TeamRecentQuali'].fillna(full_data['QualiPosition'].mean())
+    full_data['TeamRecentQuali'] = full_data['TeamRecentQuali'].fillna(full_data['GridPosition'].mean())
     full_data['TeamRecentFinish'] = full_data['TeamRecentFinish'].fillna(full_data['Position'].mean())
     full_data['TeamReliability'] = full_data['TeamReliability'].fillna(0)
     full_data.sort_values(['Season', 'RaceNumber'], inplace=True)
@@ -706,7 +702,6 @@ def _engineer_features(full_data):
     full_data['MissedQuali'] = full_data['BestQualiTime'].isna().astype(int)
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(
         full_data['BestQualiTime'].median())
-    full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
     full_data['FP3LongRunTime'] = full_data['FP3LongRunTime'].fillna(full_data['FP3LongRunTime'].mean())
     full_data['SprintFinish'] = full_data['SprintFinish'].fillna(25)

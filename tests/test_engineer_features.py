@@ -1,24 +1,23 @@
+import pytest
 import pandas as pd
 from data_utils import _engineer_features
 
-def test_engineer_features_basic():
-    df = pd.DataFrame({
-        'Season': [2024, 2024, 2024, 2024],
-        'RaceNumber': [1,1,2,2],
-        'DriverNumber': [44,55,44,55],
-        'GridPosition': [1,2,2,1],
-        'Position': [1,2,2,1],
-        'BestQualiTime': [90.0, 91.0, 92.0, 93.0],
-        'Q1': [90.0,91.0,92.0,93.0],
-        'Q2': [89.0,90.0,91.0,92.0],
-        'Q3': [88.0,89.0,90.0,91.0],
-        'AirTemp': [20,20,21,21],
-        'TrackTemp': [30,30,31,31],
-        'Rainfall': [0,0,0,0],
-        'WeightedAvgOvertakes': [10,10,10,10]
+def test_delta_and_cross_avg_and_rookie_flag():
+    data = pd.DataFrame({
+        "Season": [2024, 2024, 2025, 2025],
+        "RaceNumber": [1, 1, 1, 1],
+        "DriverNumber": [1, 2, 1, 2],
+        "Team": ["A", "A", "A", "A"],
+        "BestQualiTime": [pd.Timedelta("1:10"), pd.Timedelta("1:11"), pd.Timedelta("1:12"), pd.NaT],
+        "Position": [5, 6, 3, 4],
+        "Date": pd.to_datetime(["2024-03-01", "2024-03-01", "2025-03-01", "2025-03-01"]),
     })
-    out = _engineer_features(df)
-    assert (out['DeltaToBestQuali'] >= 0).all()
-    assert out.loc[0,'DeltaToNext'] == 1
-    assert out.loc[0,'CrossAvgFinish'] == 1
-    assert out.loc[0,'IsRookie'] == 1
+    out = _engineer_features(data.copy())
+    assert "DeltaToBestQuali" in out.columns
+    assert (out["DeltaToBestQuali"].dropna() >= 0).all()
+    dx = out[(out["Season"]==2024)].sort_values("DriverNumber")["DeltaToNext"].iloc[0]
+    assert dx == pytest.approx(1.0, rel=1e-3)
+    assert out[(out["Season"]==2024)]["IsRookie"].eq(1).all()
+    assert out[(out["Season"]==2025)]["IsRookie"].eq(0).all()
+    cavg = out[(out["Season"]==2025) & (out["DriverNumber"]==1)]["CrossAvgFinish"].iloc[0]
+    assert cavg == pytest.approx(5.0)
