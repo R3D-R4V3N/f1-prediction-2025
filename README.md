@@ -10,6 +10,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 - **Historical performance metrics** like driver experience, recent form and track specific results.
 - **Streamlit web interface** to quickly run predictions for any Grand Prix.
 - **Data export utilities** to save FP3, qualifying, sprint and race session information.
+- **Rank-based metrics** showing podium accuracy and Spearman correlation.
 
 ## How Predictions Work
 
@@ -78,7 +79,16 @@ pip install fastf1 pandas numpy scikit-learn matplotlib seaborn optuna xgboost s
    python generate_2025_data.py
    ```
 
-   Downloads FP3, qualifying and race information for every scheduled event in 2025.
+Downloads FP3, qualifying and race information for every scheduled event in 2025.
+
+## Evaluation Metrics
+
+The training routine optimises mean absolute error on finishing position.
+During training and hold-out evaluation the script also reports:
+
+- **Spearman rank correlation** between predicted and actual results.
+- **Top 1 accuracy** – percentage of races where the predicted winner matches the real winner.
+- **Top 3 accuracy** – proportion of correctly predicted podium finishers.
 
 ## Repository Structure
 
