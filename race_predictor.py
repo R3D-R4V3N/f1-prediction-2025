@@ -412,6 +412,50 @@ def _engineer_features(full_data):
     full_data['TeamRecentFinish'] = full_data['TeamRecentFinish'].fillna(full_data['Position'].mean())
     full_data['TeamReliability'] = full_data['TeamReliability'].fillna(0)
 
+    # Championship standings up to the previous round
+    full_data.sort_values(['Season', 'RaceNumber'], inplace=True)
+    full_data['DriverChampPoints'] = (
+        full_data.groupby(['Season', 'DriverNumber'])['Points']
+        .cumsum()
+        .shift()
+    )
+    full_data['ConstructorChampPoints'] = (
+        full_data.groupby(['Season', 'HistoricalTeam'])['Points']
+        .cumsum()
+        .shift()
+    )
+    full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
+    full_data['ConstructorChampPoints'] = full_data['ConstructorChampPoints'].fillna(0)
+    full_data['DriverStanding'] = (
+        full_data.groupby(['Season', 'RaceNumber'])['DriverChampPoints']
+        .rank(method='dense', ascending=False)
+    )
+    full_data['ConstructorStanding'] = (
+        full_data.groupby(['Season', 'RaceNumber'])['ConstructorChampPoints']
+        .rank(method='dense', ascending=False)
+    )
+
+    # Circuit metadata from FastF1
+    try:
+        from fastf1.circuit_info import get_circuit_info
+        circuit_lengths = {}
+        for circ in full_data['Circuit'].unique():
+            try:
+                info = get_circuit_info(circ)
+                length = (
+                    info.get('Length')
+                    or info.get('CircuitLength')
+                    or info.get('circuitLength')
+                )
+                if isinstance(length, str):
+                    length = str(length).replace(' km', '')
+                circuit_lengths[circ] = pd.to_numeric(length, errors='coerce')
+            except Exception:
+                circuit_lengths[circ] = np.nan
+        full_data['CircuitLength'] = full_data['Circuit'].map(circuit_lengths)
+    except Exception:
+        full_data['CircuitLength'] = np.nan
+
     TRACK_TYPE = {
         'Monaco Grand Prix': 'street',
         'Singapore Grand Prix': 'street',
@@ -449,6 +493,11 @@ def _engineer_features(full_data):
     full_data['DeltaToTeammateFinish'] = full_data['DeltaToTeammateFinish'].fillna(0)
     full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(0)
     full_data['DidNotFinish'] = full_data['DidNotFinish'].fillna(False)
+    full_data['CircuitLength'] = full_data['CircuitLength'].fillna(full_data['CircuitLength'].mean())
+    full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
+    full_data['ConstructorChampPoints'] = full_data['ConstructorChampPoints'].fillna(0)
+    full_data['DriverStanding'] = full_data['DriverStanding'].fillna(full_data['DriverStanding'].max())
+    full_data['ConstructorStanding'] = full_data['ConstructorStanding'].fillna(full_data['ConstructorStanding'].max())
 
     return full_data
 
@@ -656,7 +705,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'Recent5AvgFinish', 'QualiImprove', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability', 'IsStreet',
-        'DownforceLevel'
+        'DownforceLevel', 'DriverChampPoints', 'ConstructorChampPoints',
+        'DriverStanding', 'ConstructorStanding', 'CircuitLength'
     ]
     quali_cols = [
         'Season', 'ExperienceCount', 'TeamAvgPosition', 'RecentAvgPosition',
@@ -664,7 +714,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'AverageOvertakes', 'BestQualiTime', 'FP3BestTime',
         'DeltaToBestQuali', 'DeltaToTeammateQuali', 'GridDropCount',
         'QualiSessionGain', 'TeamRecentQuali', 'IsStreet',
-        'DownforceLevel'
+        'DownforceLevel', 'DriverChampPoints', 'ConstructorChampPoints',
+        'DriverStanding', 'ConstructorStanding', 'CircuitLength'
     ]
 
     # Encode features for both models using shared encoders
@@ -722,6 +773,21 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         default_rain = 0.0
         default_fp3 = race_data['FP3BestTime'].mean()
     default_overtake = race_data['AverageOvertakes'].mean()
+
+    try:
+        from fastf1.circuit_info import get_circuit_info
+        circuit_lengths = {}
+        info = get_circuit_info(grand_prix)
+        length = (
+            info.get('Length')
+            or info.get('CircuitLength')
+            or info.get('circuitLength')
+        )
+        if isinstance(length, str):
+            length = str(length).replace(' km', '')
+        circuit_lengths[grand_prix] = pd.to_numeric(length, errors='coerce')
+    except Exception:
+        circuit_lengths = {grand_prix: np.nan}
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
@@ -863,6 +929,11 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'TeamRecentQuali': team_recent_q,
             'TeamRecentFinish': team_recent_f,
             'TeamReliability': team_rel,
+            'DriverChampPoints': 0.0,
+            'ConstructorChampPoints': 0.0,
+            'DriverStanding': 0,
+            'ConstructorStanding': 0,
+            'CircuitLength': circuit_lengths.get(grand_prix, np.nan) if 'circuit_lengths' in locals() else np.nan,
             'IsStreet': 1 if grand_prix in ['Monaco Grand Prix','Singapore Grand Prix','Las Vegas Grand Prix'] else 0,
             'DownforceLevel': 1,
             'Team': d['Team'],
