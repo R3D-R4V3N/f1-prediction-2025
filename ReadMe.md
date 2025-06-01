@@ -21,7 +21,7 @@ The system handles team changes for 2025 (like Hamilton moving to Ferrari) and a
 
 ## Key Features
 
-- **Data Collection**: Automated fetching of historical F1 race data using the FastF1 API
+- **Data Collection**: Automated fetching of historical F1 race data using the FastF1 API. Rounds are determined from the official schedule so any cancelled events are automatically skipped
 - **Feature Engineering**: Comprehensive driver and team metrics creation, including
   weather conditions, average overtakes metrics, and detailed qualifying times
  - **Machine Learning**: Two-stage XGBoost models optimized with Bayesian search to predict qualifying and race finishing positions
@@ -67,6 +67,7 @@ This visualization shows:
 1. **Data Collection**
 
    - Historical race results from 2020-2025 seasons
+   - Rounds are pulled from each season's event schedule so cancelled races are skipped automatically
    - Driver and team mappings
    - Circuit-specific performance patterns
 
