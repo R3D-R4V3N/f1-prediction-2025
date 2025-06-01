@@ -5,6 +5,7 @@ import warnings
 import fastf1
 import requests
 from export_race_details import export_race_details, _fetch_session_data
+from estimate_overtakes import average_overtakes
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
@@ -595,9 +596,19 @@ def _train_model(features, target, cv, debug=False):
     return model
 
 
-def predict_race(grand_prix, year=2025, export_details=False, debug=False):
+def predict_race(grand_prix, year=2025, export_details=False, debug=False, compute_overtakes=True):
     seasons = list(range(2020, year + 1))
-    race_data = _load_historical_data(seasons)
+
+    overtake_map = _load_overtake_stats()
+    if compute_overtakes:
+        try:
+            years_for_avg = list(range(max(2020, year - 3), year))
+            avg = average_overtakes(grand_prix, years_for_avg)
+            overtake_map[grand_prix] = avg
+        except Exception as err:
+            print(f"Could not compute overtakes for {grand_prix}: {err}")
+
+    race_data = _load_historical_data(seasons, overtake_map)
     race_data = race_data.reset_index(drop=True)
     # Ensure DriverNumber is numeric for consistent merging
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')

@@ -192,7 +192,10 @@ python estimate_overtakes.py "Monaco Grand Prix" 2022 2023 2024
 ```
 
 Save the values for all circuits in `overtake_stats.csv` and the
-prediction model will use them automatically.
+prediction model will use them automatically. When running the Streamlit app,
+if a circuit's statistics are missing, the application now calculates the
+average overtakes for the last few seasons on the fly before generating the
+prediction.
 
 ## Resources
 
