@@ -894,6 +894,23 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
     ]
 
+    # Championship points and standings before the target event
+    year_data = race_data[race_data['Season'] == year]
+    if not year_data.empty:
+        driver_pts = year_data.groupby('DriverNumber')['Points'].sum()
+        constructor_pts = year_data.groupby('HistoricalTeam')['Points'].sum()
+        driver_standings = driver_pts.rank(method='dense', ascending=False).astype(int)
+        constructor_standings = constructor_pts.rank(method='dense', ascending=False).astype(int)
+        driver_pts_map = driver_pts.to_dict()
+        constructor_pts_map = constructor_pts.to_dict()
+        driver_stand_map = driver_standings.to_dict()
+        constructor_stand_map = constructor_standings.to_dict()
+    else:
+        driver_pts_map = {}
+        constructor_pts_map = {}
+        driver_stand_map = {}
+        constructor_stand_map = {}
+
 
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results['BestTime'].min()
@@ -983,10 +1000,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'TeamRecentQuali': team_recent_q,
             'TeamRecentFinish': team_recent_f,
             'TeamReliability': team_rel,
-            'DriverChampPoints': 0.0,
-            'ConstructorChampPoints': 0.0,
-            'DriverStanding': 0,
-            'ConstructorStanding': 0,
+            'DriverChampPoints': driver_pts_map.get(d['DriverNumber'], 0.0),
+            'ConstructorChampPoints': constructor_pts_map.get(d['Team'], 0.0),
+            'DriverStanding': int(driver_stand_map.get(d['DriverNumber'], 0)),
+            'ConstructorStanding': int(constructor_stand_map.get(d['Team'], 0)),
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
