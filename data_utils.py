@@ -453,6 +453,8 @@ def _engineer_features(full_data):
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
     full_data['WeightedAvgOvertakes'] = pd.to_numeric(full_data.get('WeightedAvgOvertakes'), errors='coerce')
+    # Ensure Points column exists for feature engineering
+    full_data['Points'] = pd.to_numeric(full_data.get('Points'), errors='coerce').fillna(0)
     full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
     full_data['FP3LongRunTime'] = pd.to_numeric(full_data.get('FP3LongRunTime'), errors='coerce')
