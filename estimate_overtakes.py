@@ -2,6 +2,8 @@ import os
 import statistics
 from typing import Iterable, List
 
+import numpy as np
+
 try:
     import fastf1
 except ImportError as exc:
@@ -27,7 +29,21 @@ def _count_position_changes(laps: pd.DataFrame) -> int:
 
     valid = laps[laps["IsAccurate"]].copy()
     valid = valid[valid["Position"].le(20)]
-    valid = valid[valid["PitInTime"].isna() & valid["PitOutTime"].isna()]
+
+    if "IsPitLap" in valid.columns:
+        valid = valid[~valid["IsPitLap"]]
+    else:
+        valid = valid[valid["PitInTime"].isna() & valid["PitOutTime"].isna()]
+
+    if "IsSafetyCar" in valid.columns:
+        valid = valid[~valid["IsSafetyCar"]]
+    elif "LapTime" in valid.columns and not valid["LapTime"].isna().all():
+        avg_lap = (
+            valid["LapTime"].dropna().dt.total_seconds().mean()
+        )
+        if avg_lap:
+            sc_mask = valid["LapTime"].dt.total_seconds() > 2 * avg_lap
+            valid = valid[~sc_mask]
 
     if valid.empty:
         return 0
@@ -70,16 +86,20 @@ def count_overtakes(year: int, grand_prix: str) -> int:
 
 
 def average_overtakes(grand_prix: str, years: Iterable[int]) -> float:
-    """Compute average overtakes for a circuit over multiple seasons."""
+    """Compute a weighted average of overtakes over recent seasons."""
+    yr_list = list(years)[-3:]
     counts: List[int] = []
-    for yr in years:
+    for yr in yr_list:
         try:
             counts.append(count_overtakes(yr, grand_prix))
         except Exception as err:
             print(f"⚠️ Failed to process {yr} {grand_prix}: {err}")
     if not counts:
         raise RuntimeError("No races processed")
-    return statistics.mean(counts)
+
+    weights = np.array([0.5 ** i for i in range(len(counts))])[::-1]
+    weighted = (weights * np.array(counts)).sum() / weights.sum()
+    return float(weighted)
 
 
 if __name__ == "__main__":
@@ -91,18 +111,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     avg = average_overtakes(args.grand_prix, args.years)
-    print(f"📈 Average overtakes at {args.grand_prix}: {avg:.1f}")
+    print(f"📈 Weighted average overtakes at {args.grand_prix}: {avg:.1f}")
 
     # Update or create the CSV used by the prediction model
     out_file = "overtake_stats.csv"
     try:
         df = pd.read_csv(out_file)
     except Exception:
-        df = pd.DataFrame(columns=["Circuit", "AverageOvertakes"])
+        df = pd.DataFrame(columns=["Circuit", "WeightedAvgOvertakes"])
 
     df = df[df["Circuit"] != args.grand_prix]
     df = pd.concat(
-        [df, pd.DataFrame({"Circuit": [args.grand_prix], "AverageOvertakes": [avg]})],
+        [df, pd.DataFrame({"Circuit": [args.grand_prix], "WeightedAvgOvertakes": [avg]})],
         ignore_index=True,
     )
     df.to_csv(out_file, index=False)
