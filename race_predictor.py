@@ -554,8 +554,25 @@ def predict_race(grand_prix, year=2025, export_details=False):
         qual_results = drivers_df.copy()
     except Exception:
         drivers_df = _get_event_drivers(year, grand_prix)
+
     drivers_df['DriverNumber'] = pd.to_numeric(drivers_df['DriverNumber'], errors='coerce')
-    race_data = pd.merge(race_data, drivers_df, on='DriverNumber', how='left')
+
+    # Avoid duplicate GridPosition columns when merging qualifying data with
+    # historical results.  If drivers_df contains ``GridPosition`` we preserve
+    # it by filling missing values in the historical column and then drop the
+    # suffix column created by ``merge``.
+    race_data = pd.merge(
+        race_data,
+        drivers_df,
+        on='DriverNumber',
+        how='left',
+        suffixes=('', '_driver'),
+    )
+    if 'GridPosition_driver' in race_data.columns:
+        race_data['GridPosition'] = race_data['GridPosition'].fillna(
+            race_data['GridPosition_driver']
+        )
+        race_data.drop(columns=['GridPosition_driver'], inplace=True)
     race_data = _add_driver_team_info(race_data, seasons)
     race_data = _engineer_features(race_data)
     # Save the engineered dataset used for training and prediction so users can
