@@ -223,6 +223,35 @@ GRAND_PRIX_LIST = [
     'Abu Dhabi Grand Prix'
 ]
 
+# Basic circuit metadata used when FastF1 does not provide information.
+# Values are approximate and measured in seconds for ``StdLapTime``.
+CIRCUIT_METADATA = {
+    'Bahrain Grand Prix': {'NumCorners': 15, 'DRSZones': 3, 'StdLapTime': 92},
+    'Saudi Arabian Grand Prix': {'NumCorners': 27, 'DRSZones': 3, 'StdLapTime': 90},
+    'Australian Grand Prix': {'NumCorners': 14, 'DRSZones': 4, 'StdLapTime': 80},
+    'Japanese Grand Prix': {'NumCorners': 18, 'DRSZones': 1, 'StdLapTime': 93},
+    'Chinese Grand Prix': {'NumCorners': 16, 'DRSZones': 2, 'StdLapTime': 95},
+    'Miami Grand Prix': {'NumCorners': 19, 'DRSZones': 3, 'StdLapTime': 90},
+    'Emilia Romagna Grand Prix': {'NumCorners': 19, 'DRSZones': 2, 'StdLapTime': 75},
+    'Monaco Grand Prix': {'NumCorners': 19, 'DRSZones': 1, 'StdLapTime': 72},
+    'Canadian Grand Prix': {'NumCorners': 14, 'DRSZones': 2, 'StdLapTime': 70},
+    'Spanish Grand Prix': {'NumCorners': 14, 'DRSZones': 2, 'StdLapTime': 78},
+    'Austrian Grand Prix': {'NumCorners': 10, 'DRSZones': 3, 'StdLapTime': 65},
+    'British Grand Prix': {'NumCorners': 18, 'DRSZones': 2, 'StdLapTime': 85},
+    'Hungarian Grand Prix': {'NumCorners': 14, 'DRSZones': 2, 'StdLapTime': 76},
+    'Belgian Grand Prix': {'NumCorners': 19, 'DRSZones': 2, 'StdLapTime': 112},
+    'Dutch Grand Prix': {'NumCorners': 14, 'DRSZones': 2, 'StdLapTime': 72},
+    'Italian Grand Prix': {'NumCorners': 11, 'DRSZones': 2, 'StdLapTime': 79},
+    'Azerbaijan Grand Prix': {'NumCorners': 20, 'DRSZones': 2, 'StdLapTime': 100},
+    'Singapore Grand Prix': {'NumCorners': 19, 'DRSZones': 3, 'StdLapTime': 103},
+    'United States Grand Prix': {'NumCorners': 20, 'DRSZones': 2, 'StdLapTime': 90},
+    'Mexican Grand Prix': {'NumCorners': 17, 'DRSZones': 3, 'StdLapTime': 77},
+    'Brazilian Grand Prix': {'NumCorners': 15, 'DRSZones': 2, 'StdLapTime': 72},
+    'Las Vegas Grand Prix': {'NumCorners': 17, 'DRSZones': 2, 'StdLapTime': 95},
+    'Qatar Grand Prix': {'NumCorners': 16, 'DRSZones': 2, 'StdLapTime': 81},
+    'Abu Dhabi Grand Prix': {'NumCorners': 16, 'DRSZones': 2, 'StdLapTime': 85},
+}
+
 
 def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     """Return a cleaned historical dataset for model training.
@@ -588,6 +617,9 @@ def _engineer_features(full_data):
     try:
         from fastf1.circuit_info import get_circuit_info
         circuit_lengths = {}
+        corners_map = {}
+        drs_map = {}
+        lap_map = {}
         for circ in full_data['Circuit'].unique():
             try:
                 info = get_circuit_info(circ)
@@ -596,14 +628,55 @@ def _engineer_features(full_data):
                     or info.get('CircuitLength')
                     or info.get('circuitLength')
                 )
+                corners = (
+                    info.get('NumberOfTurns')
+                    or info.get('Turns')
+                    or info.get('numCorners')
+                )
+                drs = (
+                    info.get('NumberOfDRSZones')
+                    or info.get('DRSZonesCount')
+                    or info.get('drsZones')
+                )
+                laptime = (
+                    info.get('LapTimeAvg')
+                    or info.get('LapRecord')
+                    or info.get('lapRecord')
+                )
                 if isinstance(length, str):
                     length = str(length).replace(' km', '')
+                if isinstance(laptime, str):
+                    try:
+                        laptime = pd.to_timedelta(laptime).total_seconds()
+                    except Exception:
+                        laptime = pd.to_numeric(laptime, errors='coerce')
                 circuit_lengths[circ] = pd.to_numeric(length, errors='coerce')
+                corners_map[circ] = pd.to_numeric(corners, errors='coerce')
+                drs_map[circ] = pd.to_numeric(drs, errors='coerce')
+                lap_map[circ] = pd.to_numeric(laptime, errors='coerce')
             except Exception:
+                meta = CIRCUIT_METADATA.get(circ, {})
                 circuit_lengths[circ] = np.nan
+                corners_map[circ] = meta.get('NumCorners', np.nan)
+                drs_map[circ] = meta.get('DRSZones', np.nan)
+                lap_map[circ] = meta.get('StdLapTime', np.nan)
         full_data['CircuitLength'] = full_data['Circuit'].map(circuit_lengths)
+        full_data['NumCorners'] = full_data['Circuit'].map(corners_map)
+        full_data['DRSZones'] = full_data['Circuit'].map(drs_map)
+        full_data['StdLapTime'] = full_data['Circuit'].map(lap_map)
     except Exception:
-        full_data['CircuitLength'] = np.nan
+        full_data['CircuitLength'] = full_data['Circuit'].map(
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('CircuitLength', np.nan)
+        )
+        full_data['NumCorners'] = full_data['Circuit'].map(
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('NumCorners', np.nan)
+        )
+        full_data['DRSZones'] = full_data['Circuit'].map(
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('DRSZones', np.nan)
+        )
+        full_data['StdLapTime'] = full_data['Circuit'].map(
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('StdLapTime', np.nan)
+        )
 
     TRACK_TYPE = {
         'Monaco Grand Prix': 'street',
@@ -657,6 +730,9 @@ def _engineer_features(full_data):
         full_data['QualiSessionGain'].median())
     full_data['DidNotFinish'] = full_data['DidNotFinish'].fillna(False)
     full_data['CircuitLength'] = full_data['CircuitLength'].fillna(full_data['CircuitLength'].mean())
+    full_data['NumCorners'] = full_data['NumCorners'].fillna(full_data['NumCorners'].median())
+    full_data['DRSZones'] = full_data['DRSZones'].fillna(full_data['DRSZones'].median())
+    full_data['StdLapTime'] = full_data['StdLapTime'].fillna(full_data['StdLapTime'].mean())
     full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
     full_data['ConstructorChampPoints'] = full_data['ConstructorChampPoints'].fillna(0)
     full_data['DriverStanding'] = full_data['DriverStanding'].fillna(full_data['DriverStanding'].max())
@@ -960,7 +1036,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'TeamRecentFinish', 'TeamReliability',
         'DriverChampPoints', 'ConstructorChampPoints',
         'DriverStanding', 'ConstructorStanding', 'PrevYearConstructorRank',
-        'CircuitLength', 'IsStreet', 'DownforceLevel',
+        'CircuitLength', 'NumCorners', 'DRSZones', 'StdLapTime',
+        'IsStreet', 'DownforceLevel',
         'AirTemp', 'TrackTemp', 'Rainfall', 'WeightedAvgOvertakes'
     ]
 
@@ -1064,17 +1141,47 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     try:
         from fastf1.circuit_info import get_circuit_info
         circuit_lengths = {}
+        corners_map = {}
+        drs_map = {}
+        lap_map = {}
         info = get_circuit_info(grand_prix)
         length = (
             info.get('Length')
             or info.get('CircuitLength')
             or info.get('circuitLength')
         )
+        corners = (
+            info.get('NumberOfTurns')
+            or info.get('Turns')
+            or info.get('numCorners')
+        )
+        drs = (
+            info.get('NumberOfDRSZones')
+            or info.get('DRSZonesCount')
+            or info.get('drsZones')
+        )
+        laptime = (
+            info.get('LapTimeAvg')
+            or info.get('LapRecord')
+            or info.get('lapRecord')
+        )
         if isinstance(length, str):
             length = str(length).replace(' km', '')
+        if isinstance(laptime, str):
+            try:
+                laptime = pd.to_timedelta(laptime).total_seconds()
+            except Exception:
+                laptime = pd.to_numeric(laptime, errors='coerce')
         circuit_lengths[grand_prix] = pd.to_numeric(length, errors='coerce')
+        corners_map[grand_prix] = pd.to_numeric(corners, errors='coerce')
+        drs_map[grand_prix] = pd.to_numeric(drs, errors='coerce')
+        lap_map[grand_prix] = pd.to_numeric(laptime, errors='coerce')
     except Exception:
+        meta = CIRCUIT_METADATA.get(grand_prix, {})
         circuit_lengths = {grand_prix: np.nan}
+        corners_map = {grand_prix: meta.get('NumCorners', np.nan)}
+        drs_map = {grand_prix: meta.get('DRSZones', np.nan)}
+        lap_map = {grand_prix: meta.get('StdLapTime', np.nan)}
 
     TRACK_TYPE = {
         'Monaco Grand Prix': 'street',
@@ -1093,6 +1200,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     downforce_val = DOWNFORCE.get(grand_prix, 'medium')
     downforce_level_val = df_level_map.get(downforce_val, 1)
     circuit_length_val = circuit_lengths.get(grand_prix, np.nan)
+    num_corners_val = corners_map.get(grand_prix, np.nan)
+    drs_zones_val = drs_map.get(grand_prix, np.nan)
+    std_lap_time_val = lap_map.get(grand_prix, np.nan)
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
@@ -1274,6 +1384,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'ConstructorStanding': int(constructor_stand_map.get(d['Team'], 0)),
             'PrevYearConstructorRank': prev_rank_map.get(team_name, default_prev_rank),
             'CircuitLength': circuit_length_val,
+            'NumCorners': num_corners_val,
+            'DRSZones': drs_zones_val,
+            'StdLapTime': std_lap_time_val,
             'IsStreet': is_street_val,
             'DownforceLevel': downforce_level_val,
             'AirTemp': default_air,
@@ -1317,6 +1430,18 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     pred_df['SprintFinish'] = (
         pd.to_numeric(pred_df.get('SprintFinish'), errors='coerce')
         .fillna(25)
+    )
+    pred_df['NumCorners'] = (
+        pd.to_numeric(pred_df['NumCorners'], errors='coerce')
+        .fillna(race_data['NumCorners'].median())
+    )
+    pred_df['DRSZones'] = (
+        pd.to_numeric(pred_df['DRSZones'], errors='coerce')
+        .fillna(race_data['DRSZones'].median())
+    )
+    pred_df['StdLapTime'] = (
+        pd.to_numeric(pred_df['StdLapTime'], errors='coerce')
+        .fillna(race_data['StdLapTime'].mean())
     )
 
     # Save the driver list so the raw input fed to the model can be inspected.
