@@ -20,7 +20,7 @@ The model is trained on event data from the 2020‑2025 seasons. For each race i
 1. **Driver and team results** from FastF1 with fallbacks to the Ergast API.
 2. **Qualifying and practice times** for each driver, including the time gap to the next fastest qualifier.
 3. **Weather data** (air temperature, track temperature, rainfall).
-4. **Average overtakes** per circuit calculated with `estimate_overtakes.py`.
+4. **Weighted average overtakes** per circuit calculated with `estimate_overtakes.py`.
 5. **Championship standings and circuit metadata** such as track length.
 
 An XGBoost regressor uses the official starting grid and all engineered features to forecast the finishing order.
@@ -72,7 +72,7 @@ pip install fastf1 pandas numpy scikit-learn matplotlib seaborn optuna xgboost s
    python estimate_overtakes.py "Monaco Grand Prix" 2022 2023 2024
    ```
 
-   Calculates the average number of genuine overtakes for the circuit and updates `overtake_stats.csv`.
+   Calculates the weighted average number of genuine overtakes for the circuit and updates `overtake_stats.csv`.
 
 5. **Generate full season data**
 
@@ -98,7 +98,7 @@ During training and hold-out evaluation the script also reports:
 - `export_race_details.py` – utility to save detailed session CSVs.
 - `estimate_overtakes.py` – script to compute overtake statistics.
 - `generate_2025_data.py` – bulk data downloader for a full season.
-- `overtake_stats.csv` – optional lookup table of average overtakes per circuit.
+ - `overtake_stats.csv` – optional lookup table of weighted average overtakes per circuit.
 - `race_details/` – folder containing exported event data.
 
 ## License

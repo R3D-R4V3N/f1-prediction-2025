@@ -172,7 +172,7 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
 
 
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
-    """Return average overtake counts mapped by circuit name.
+    """Return weighted average overtake counts mapped by circuit name.
 
     If the CSV does not exist or is empty an empty dictionary is returned
     instead of raising an exception.  This allows the application to run
@@ -187,12 +187,12 @@ def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
     except Exception:
         return {}
 
-    if df.empty or "Circuit" not in df.columns or "AverageOvertakes" not in df.columns:
+    if df.empty or "Circuit" not in df.columns or "WeightedAvgOvertakes" not in df.columns:
         return {}
 
-    return df.set_index("Circuit")["AverageOvertakes"].to_dict()
+    return df.set_index("Circuit")["WeightedAvgOvertakes"].to_dict()
 
-# Average overtakes per circuit used for model training
+# Weighted average overtakes per circuit used for model training
 OVERTAKE_AVERAGES = _load_overtake_stats()
 
 # List of grand prix for selection (2024 schedule approximation)
@@ -288,8 +288,8 @@ def _load_historical_data(seasons, overtake_map=None):
                     results['TrackTemp'] = np.nan
                     results['Rainfall'] = np.nan
 
-                # Average overtake count for this circuit
-                results['AverageOvertakes'] = overtake_map.get(
+                # Weighted average overtake count for this circuit
+                results['WeightedAvgOvertakes'] = overtake_map.get(
                     results['Circuit'].iloc[0], np.nan
                 )
 
@@ -415,7 +415,9 @@ def _engineer_features(full_data):
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
-    full_data['AverageOvertakes'] = pd.to_numeric(full_data.get('AverageOvertakes'), errors='coerce')
+    full_data['WeightedAvgOvertakes'] = pd.to_numeric(
+        full_data.get('WeightedAvgOvertakes'), errors='coerce'
+    )
     full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
     full_data['QualiPosition'] = pd.to_numeric(full_data.get('QualiPosition'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
@@ -612,7 +614,9 @@ def _engineer_features(full_data):
     # Use the median rainfall rather than ``0`` to avoid treating missing
     # data as a completely dry event which could bias the model.
     full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
-    full_data['AverageOvertakes'] = full_data['AverageOvertakes'].fillna(full_data['AverageOvertakes'].mean())
+    full_data['WeightedAvgOvertakes'] = full_data['WeightedAvgOvertakes'].fillna(
+        full_data['WeightedAvgOvertakes'].mean()
+    )
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
@@ -933,7 +937,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'DriverChampPoints', 'ConstructorChampPoints',
         'DriverStanding', 'ConstructorStanding',
         'CircuitLength', 'IsStreet', 'DownforceLevel',
-        'AirTemp', 'TrackTemp', 'Rainfall', 'AverageOvertakes'
+        'AirTemp', 'TrackTemp', 'Rainfall', 'WeightedAvgOvertakes'
     ]
 
     # Hold-out evaluation on the last completed season
@@ -1023,7 +1027,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         default_rain = race_data['Rainfall'].median()
         default_fp3 = race_data['FP3BestTime'].mean()
         default_fp3_long = race_data['FP3LongRunTime'].mean()
-    default_overtake = race_data['AverageOvertakes'].mean()
+    default_overtake = race_data['WeightedAvgOvertakes'].mean()
 
     # Determine the round number for the target event so season-based
     # rolling features can mirror the training logic.
@@ -1237,7 +1241,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'AirTemp': default_air,
             'TrackTemp': default_track,
             'Rainfall': default_rain,
-            'AverageOvertakes': default_overtake,
+            'WeightedAvgOvertakes': default_overtake,
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
