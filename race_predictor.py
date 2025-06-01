@@ -397,10 +397,23 @@ def _engineer_features(full_data):
 
     # Delta to fastest qualifier in the event
     if 'BestQualiTime' in full_data.columns:
-        event_fastest = full_data.groupby(['Season', 'RaceNumber'])['BestQualiTime'].transform('min')
+        event_fastest = (
+            full_data.groupby(['Season', 'RaceNumber'])['BestQualiTime']
+            .transform('min')
+        )
         full_data['DeltaToBestQuali'] = full_data['BestQualiTime'] - event_fastest
+        def _delta_next(g):
+            ordered = g.sort_values('BestQualiTime')
+            delta = ordered['BestQualiTime'].diff(-1).abs()
+            return delta.reindex(g.index)
+        full_data['DeltaToNext'] = (
+            full_data.groupby(['Season', 'RaceNumber'], group_keys=False)
+            .apply(_delta_next)
+            .reindex(full_data.index)
+        )
     else:
         full_data['DeltaToBestQuali'] = np.nan
+        full_data['DeltaToNext'] = np.nan
 
     # Delta to team mate qualifying time
     if 'BestQualiTime' in full_data.columns:
@@ -558,6 +571,7 @@ def _engineer_features(full_data):
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
     full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
+    full_data['DeltaToNext'] = full_data['DeltaToNext'].fillna(full_data['DeltaToNext'].mean())
     # ``0`` can indicate a perfect tie with the team mate. Replace missing
     # values with the median difference so the model does not interpret them
     # as exceptionally good laps.
@@ -861,6 +875,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
         'RecentAvgPosition', 'RecentAvgPoints', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'DeltaToBestQuali',
+        'DeltaToNext',
         'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability',
@@ -940,8 +955,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results['BestTime'].mean()
+        default_delta_next = qual_results['DeltaToNext'].mean()
     else:
         default_best_q = race_data['BestQualiTime'].mean()
+        default_delta_next = race_data['DeltaToNext'].mean()
 
     if fp3_results is not None and not fp3_results.empty:
         default_air = fp3_results['AvgAirTemp'].mean()
@@ -1036,6 +1053,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results['BestTime'].min()
         qual_results['DeltaToBestQuali'] = qual_results['BestTime'] - fastest
+        qual_results = qual_results.sort_values('BestTime')
+        qual_results['DeltaToNext'] = qual_results['BestTime'].diff(-1).abs()
+        qual_results = qual_results.sort_index()
         team_mean = qual_results.groupby('Team')['BestTime'].transform('mean')
         team_size = qual_results.groupby('Team')['BestTime'].transform('size')
         qual_results['DeltaToTeammateQuali'] = np.where(team_size > 1,
@@ -1138,6 +1158,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'QualiPosition': grid_pos,
             'FP3BestTime': fp3_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
+            'DeltaToNext': d.get('DeltaToNext', default_delta_next),
             'Recent3AvgFinish': recent3_avg,
             'Recent5AvgFinish': recent5_avg,
             'DriverAvgTrackFinish': avg_track,
