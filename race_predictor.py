@@ -401,6 +401,7 @@ def _load_historical_data(seasons, overtake_map=None):
                 results['Season'] = season
                 results['RaceNumber'] = rnd
                 results['Circuit'] = session.event['EventName']
+                results['Date'] = session.date.strftime('%Y-%m-%d')
 
                 # Weather information
                 try:
@@ -815,16 +816,29 @@ def _engineer_features(full_data):
     full_data['TeamAvgPosition'] = full_data['TeamAvgPosition'].fillna(
         full_data['TeamAvgPosition'].mean())
 
+    # --- Weather Imputation -------------------------------------------------
+    # Compute the event month so missing weather values can be imputed using the
+    # typical conditions for that circuit and time of year. This preserves local
+    # climate patterns much better than a global mean.
+    full_data['Month'] = pd.to_datetime(full_data['Date'], errors='coerce').dt.month
+
+    air_med = full_data.groupby(['Circuit', 'Month'])['AirTemp'].transform('median')
+    full_data['AirTemp'] = full_data['AirTemp'].fillna(air_med)
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
+
+    track_med = full_data.groupby(['Circuit', 'Month'])['TrackTemp'].transform('median')
+    full_data['TrackTemp'] = full_data['TrackTemp'].fillna(track_med)
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
 
-    # Flag missing rainfall values and impute using the circuit-specific median
-    # before falling back to the global median. This avoids biasing all missing
-    # values toward a dry event while still providing a sensible default.
+    # Flag missing rainfall values and impute using circuit×month medians before
+    # falling back to circuit or global statistics.
     full_data['RainfallMissing'] = full_data['Rainfall'].isna().astype(int)
+    rain_med = full_data.groupby(['Circuit', 'Month'])['Rainfall'].transform('median')
+    full_data['Rainfall'] = full_data['Rainfall'].fillna(rain_med)
     circuit_rain = full_data.groupby('Circuit')['Rainfall'].transform('median')
     full_data['Rainfall'] = full_data['Rainfall'].fillna(circuit_rain)
     full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
+    full_data = full_data.drop(columns=['Month', 'Date'], errors='ignore')
     full_data['WeightedAvgOvertakes'] = full_data['WeightedAvgOvertakes'].fillna(
         full_data['WeightedAvgOvertakes'].mean()
     )
@@ -1142,6 +1156,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     if match.empty:
         raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
     this_race_number = int(match.iloc[0]["RoundNumber"])
+    event_month = pd.to_datetime(match.iloc[0].get("EventDate"), errors="coerce").month
 
     # Include the target ``year`` in the loaded dataset so any completed races
     # from the ongoing season contribute to championship standings.
@@ -1609,12 +1624,31 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         .fillna(race_data['StdLapTime'].mean())
     )
 
+    # --- Weather Imputation -------------------------------------------------
+    pred_df['Month'] = event_month
+
+    air_map = race_data.groupby(['Circuit', 'Month'])['AirTemp'].median()
+    air_val = air_map.get((grand_prix, event_month), np.nan)
+    pred_df['AirTemp'] = pd.to_numeric(pred_df['AirTemp'], errors='coerce')
+    pred_df['AirTemp'] = pred_df['AirTemp'].fillna(air_val)
+    pred_df['AirTemp'] = pred_df['AirTemp'].fillna(race_data['AirTemp'].mean())
+
+    track_map = race_data.groupby(['Circuit', 'Month'])['TrackTemp'].median()
+    track_val = track_map.get((grand_prix, event_month), np.nan)
+    pred_df['TrackTemp'] = pd.to_numeric(pred_df['TrackTemp'], errors='coerce')
+    pred_df['TrackTemp'] = pred_df['TrackTemp'].fillna(track_val)
+    pred_df['TrackTemp'] = pred_df['TrackTemp'].fillna(race_data['TrackTemp'].mean())
+
     pred_df['Rainfall'] = pd.to_numeric(pred_df['Rainfall'], errors='coerce')
     pred_df['RainfallMissing'] = pred_df['Rainfall'].isna().astype(int)
+    rain_map = race_data.groupby(['Circuit', 'Month'])['Rainfall'].median()
+    rain_val = rain_map.get((grand_prix, event_month), np.nan)
+    pred_df['Rainfall'] = pred_df['Rainfall'].fillna(rain_val)
     circ_rain_map = race_data.groupby('Circuit')['Rainfall'].median()
     circuit_rain = circ_rain_map.get(grand_prix, race_data['Rainfall'].median())
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(circuit_rain)
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(race_data['Rainfall'].median())
+    pred_df = pred_df.drop(columns=['Month'], errors='ignore')
 
     # Save the driver list so the raw input fed to the model can be inspected.
     pred_df.to_csv("prediction_input.csv", index=False)
