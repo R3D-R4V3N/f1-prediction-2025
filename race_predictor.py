@@ -362,7 +362,10 @@ def _add_driver_team_info(full_data, seasons):
 
 def _engineer_features(full_data):
     full_data['Position'] = pd.to_numeric(full_data.get('Position'), errors='coerce').fillna(25)
-    full_data['GridPosition'] = pd.to_numeric(full_data.get('GridPosition'), errors='coerce').fillna(25)
+    full_data['GridPosition'] = pd.to_numeric(
+        full_data.get('GridPosition'), errors='coerce'
+    ).fillna(20)
+    full_data['GridPosition'] = full_data['GridPosition'].clip(1, 20)
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
@@ -1104,7 +1107,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             # Use the same defaults as the training data when qualifying
             # information is missing so the model sees a consistent
             # distribution during training and prediction.
-            grid_pos = 25
+            grid_pos = 20
             best_time = default_best_q
 
         if fp3_results is not None and 'FP3BestTime' in d and pd.notna(d['FP3BestTime']):
@@ -1170,8 +1173,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # consistent between training and prediction phases.
     pred_df['GridPosition'] = (
         pd.to_numeric(pred_df['GridPosition'], errors='coerce')
-        .fillna(25)
+        .fillna(20)
     )
+    pred_df['GridPosition'] = pred_df['GridPosition'].clip(1, 20)
     pred_df['QualiPosition'] = (
         pd.to_numeric(pred_df['QualiPosition'], errors='coerce')
         .fillna(20)
