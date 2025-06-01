@@ -663,6 +663,11 @@ def _train_model(features, target, cv, debug=False):
         Cross-validation splitter.
     debug : bool, optional
         When ``True`` plot the top 10 feature importances after fitting.
+
+    Returns
+    -------
+    Tuple[XGBRegressor, float]
+        The trained model and the best cross-validation MAE score.
     """
 
     def objective(trial):
@@ -690,6 +695,7 @@ def _train_model(features, target, cv, debug=False):
     study = optuna.create_study(direction='minimize')
     study.optimize(objective, n_trials=20, show_progress_bar=False)
     best_params = study.best_params
+    best_score = study.best_value
     model = XGBRegressor(
         objective='reg:squarederror',
         random_state=42,
@@ -699,7 +705,7 @@ def _train_model(features, target, cv, debug=False):
     if debug:
         plot_importance(model, max_num_features=10)
         plt.show()
-    return model
+    return model, best_score
 
 
 def predict_race(grand_prix, year=2025, export_details=False, debug=False, compute_overtakes=True):
@@ -774,7 +780,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     # Train race finish model
     target = race_data['Position']
-    model = _train_model(features, target, cv, debug)
+    model, cv_mae = _train_model(features, target, cv, debug)
 
     finish_preds_hist = model.predict(features)
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
@@ -1055,7 +1061,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             print(f"Saved session data to {detail_path}")
         except Exception as err:
             print(f"Could not export session data: {err}")
-    print(f"Finish MAE on training data: {finish_mae:.2f}")
+    print(f"CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
     return results
 
 
