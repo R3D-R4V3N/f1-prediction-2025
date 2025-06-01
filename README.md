@@ -48,16 +48,16 @@ If you want live weather predictions, set the `OPENWEATHER_API_KEY` environment 
 1. **Single race prediction**
 
    ```bash
-   python predictor.py
+   python pipeline.py
    ```
 
-   By default this runs `predict_race` for the Chinese Grand Prix in 2025. Edit the last lines of `predictor.py` or call the function from Python to choose another event.
+   By default this runs `predict_race` for the Chinese Grand Prix in 2025. Edit the last lines of `pipeline.py` or call the function from Python to choose another event.
 
 2. **Streamlit web app**
 
    ```bash
-   streamlit run webapp.py
-   ```
+  streamlit run webapp.py
+  ```
 
    Select a Grand Prix from the dropdown and the app will display the predicted finishing positions.
 
@@ -97,13 +97,25 @@ hold-out evaluation the script also reports:
 
 ## Repository Structure
 
-- `predictor.py` – core prediction orchestrator.
+- `pipeline.py` – core prediction orchestrator.
 - `webapp.py` – Streamlit interface.
 - `export_race_details.py` – utility to save detailed session CSVs.
 - `estimate_overtakes.py` – script to compute overtake statistics.
 - `generate_2025_data.py` – bulk data downloader for a full season.
  - `overtake_stats.csv` – optional lookup table of weighted average overtakes per circuit.
 - `race_details/` – folder containing exported event data.
+
+## Testing
+
+Run the unit tests with:
+
+```bash
+pytest --maxfail=1 --disable-warnings -q
+```
+
+Set `LOGLEVEL=DEBUG` before running scripts to see detailed logs. Cached files
+are stored in `cache/` and the feature importance plot is saved under
+`model_info/`.
 
 ## License
 

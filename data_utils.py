@@ -1,34 +1,35 @@
-import os
-import warnings
+from os import makedirs
 import logging
+from warnings import filterwarnings
 
-import fastf1
+from fastf1 import Cache, get_event_schedule, get_session
 import requests
-import numpy as np
+from numpy import nan, mean, max, where
 import pandas as pd
+from pandas import DataFrame, Series, to_numeric, to_timedelta, read_csv
 from sklearn.preprocessing import OneHotEncoder
 
 from export_race_details import _fetch_session_data
 
 logger = logging.getLogger(__name__)
 
-warnings.filterwarnings('ignore')
+filterwarnings('ignore')
 
 # Enable caching for FastF1
 CACHE_DIR = 'f1_cache'
-os.makedirs(CACHE_DIR, exist_ok=True)
-fastf1.Cache.enable_cache(CACHE_DIR)
+makedirs(CACHE_DIR, exist_ok=True)
+Cache.enable_cache(CACHE_DIR)
 
 
 def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
     """Return the driver lineup for a given event using FastF1."""
-    schedule = fastf1.get_event_schedule(year)
+    schedule = get_event_schedule(year)
     match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
     if match.empty:
         raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
 
     round_number = int(match.iloc[0]["RoundNumber"])
-    session = fastf1.get_session(year, round_number, "R")
+    session = get_session(year, round_number, "R")
 
     # First try official race results which contain driver details
     try:
@@ -79,13 +80,13 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
 
 def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     """Return qualifying results with driver abbreviations and times."""
-    schedule = fastf1.get_event_schedule(year)
+    schedule = get_event_schedule(year)
     match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
     if match.empty:
         raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
 
     round_number = int(match.iloc[0]["RoundNumber"])
-    session = fastf1.get_session(year, round_number, "Q")
+    session = get_session(year, round_number, "Q")
     session.load()
     q_res = session.results[[
         "DriverNumber", "Abbreviation", "FullName", "TeamName", "Position", "Q1", "Q2", "Q3"
@@ -108,7 +109,7 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
 
 def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
     """Return FP3 best laps and weather information."""
-    schedule = fastf1.get_event_schedule(year)
+    schedule = get_event_schedule(year)
     match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
     if match.empty:
         raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
@@ -230,6 +231,23 @@ CIRCUIT_COORDS = {
     'Abu Dhabi Grand Prix': (24.4672, 54.6030),
 }
 
+# Canonical feature columns used for model training
+race_cols = [
+    'Season', 'RaceNumber', 'DriverNumber', 'GridPosition',
+    'BestQualiTime', 'DeltaToBestQuali', 'DeltaToNext',
+    'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
+    'FP3BestTime', 'FP3LongRunTime',
+    'AirTemp', 'TrackTemp', 'Rainfall', 'MissedQuali',
+    'SprintFinish', 'CrossAvgFinish', 'RecentAvgPoints',
+    'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
+    'DriverTrackPodiums', 'DriverTrackDNFs', 'IsRookie',
+    'PrevYearConstructorRank', 'TeamRecentQuali', 'TeamRecentFinish',
+    'TeamReliability', 'TeamTier_0', 'TeamTier_1',
+    'TeamTier_2', 'TeamTier_3', 'CircuitLength', 'NumCorners',
+    'DRSZones', 'StdLapTime', 'IsStreet', 'DownforceLevel',
+    'WeightedAvgOvertakes'
+]
+
 
 def fetch_weather(circuit: str, api_key: str | None = None) -> dict | None:
     """Return a short-range weather forecast for the given circuit."""
@@ -253,8 +271,8 @@ def fetch_weather(circuit: str, api_key: str | None = None) -> dict | None:
                 temps.append(main["temp"])
             pops.append(item.get("pop", 0))
         if temps:
-            air = float(np.mean(temps))
-            rain = float(np.max(pops)) if pops else 0.0
+            air = float(mean(temps))
+            rain = float(max(pops)) if pops else 0.0
             return {"ForecastAirTemp": air, "ForecastPrecipChance": rain}
     except Exception as err:  # pragma: no cover - network call
         logger.warning("Failed to fetch weather: %s", err)
@@ -288,14 +306,14 @@ def _load_historical_data(seasons, overtake_map=None):
     race_data = []
     for season in seasons:
         try:
-            schedule = fastf1.get_event_schedule(season)
+            schedule = get_event_schedule(season)
             rounds = schedule["RoundNumber"].dropna().unique()
         except Exception:
             continue
         for rnd in sorted(rounds):
             rnd = int(rnd)
             try:
-                session = fastf1.get_session(season, rnd, 'R')
+                session = get_session(season, rnd, 'R')
                 session.load()
                 results = session.results[['DriverNumber', 'Position', 'Points', 'GridPosition', 'Status']]
                 results['Season'] = season
@@ -308,12 +326,12 @@ def _load_historical_data(seasons, overtake_map=None):
                     results['TrackTemp'] = weather['TrackTemp'].mean()
                     results['Rainfall'] = weather['Rainfall'].max()
                 except Exception:
-                    results['AirTemp'] = np.nan
-                    results['TrackTemp'] = np.nan
-                    results['Rainfall'] = np.nan
-                results['WeightedAvgOvertakes'] = overtake_map.get(results['Circuit'].iloc[0], np.nan)
+                    results['AirTemp'] = nan
+                    results['TrackTemp'] = nan
+                    results['Rainfall'] = nan
+                results['WeightedAvgOvertakes'] = overtake_map.get(results['Circuit'].iloc[0], nan)
                 try:
-                    q_session = fastf1.get_session(season, rnd, 'Q')
+                    q_session = get_session(season, rnd, 'Q')
                     q_session.load()
                     q_results = q_session.results[['DriverNumber', 'Position', 'Q1', 'Q2', 'Q3']]
 
@@ -326,12 +344,12 @@ def _load_historical_data(seasons, overtake_map=None):
                                     times.append(pd.to_timedelta(val).total_seconds())
                                 except Exception:
                                     pass
-                        return min(times) if times else np.nan
+                        return min(times) if times else nan
 
                     q_results['BestQualiTime'] = q_results.apply(_best_time, axis=1)
                     q_results = q_results.rename(columns={'Position': 'QualiPosition'})
                     q_results['Q3Time'] = q_results['Q3'].apply(
-                        lambda x: pd.to_timedelta(x).total_seconds() if pd.notna(x) else np.nan
+                        lambda x: pd.to_timedelta(x).total_seconds() if pd.notna(x) else nan
                     )
                     q_results['GridFromQ3'] = q_results['Q3Time'].rank(method='first')
                     results = pd.merge(
@@ -344,10 +362,10 @@ def _load_historical_data(seasons, overtake_map=None):
                         results['GridPosition'] = results['GridPosition'].fillna(results['QualiPosition'])
                         results['GridPosition'] = results['GridPosition'].fillna(results['GridFromQ3'])
                 except Exception:
-                    results['BestQualiTime'] = np.nan
-                    results['QualiPosition'] = np.nan
+                    results['BestQualiTime'] = nan
+                    results['QualiPosition'] = nan
                 try:
-                    fp3_session = fastf1.get_session(season, rnd, 'FP3')
+                    fp3_session = get_session(season, rnd, 'FP3')
                     fp3_session.load()
                     best_laps = (
                         fp3_session.laps
@@ -369,20 +387,20 @@ def _load_historical_data(seasons, overtake_map=None):
                         )
                         best_laps = best_laps.merge(long_avg, on='DriverNumber', how='left')
                     else:
-                        best_laps['FP3LongRunTime'] = np.nan
+                        best_laps['FP3LongRunTime'] = nan
                     results = pd.merge(results, best_laps, on='DriverNumber', how='left')
                 except Exception:
-                    results['FP3BestTime'] = np.nan
-                    results['FP3LongRunTime'] = np.nan
+                    results['FP3BestTime'] = nan
+                    results['FP3LongRunTime'] = nan
                 try:
-                    sprint_session = fastf1.get_session(season, rnd, 'S')
+                    sprint_session = get_session(season, rnd, 'S')
                     sprint_session.load()
                     sprint_res = sprint_session.results[['DriverNumber', 'Position']].rename(
                         columns={'Position': 'SprintFinish'}
                     )
                     results = results.merge(sprint_res, on='DriverNumber', how='left')
                 except Exception:
-                    results['SprintFinish'] = np.nan
+                    results['SprintFinish'] = nan
                 race_data.append(results)
             except Exception:
                 continue
@@ -393,9 +411,9 @@ def _add_driver_team_info(full_data, seasons):
     seasons_drivers = {}
     for season in seasons:
         try:
-            schedule = fastf1.get_event_schedule(season)
+            schedule = get_event_schedule(season)
             first_race = schedule.iloc[0]['RoundNumber']
-            session = fastf1.get_session(season, first_race, 'R')
+            session = get_session(season, first_race, 'R')
             session.load()
             for _, row in session.results.iterrows():
                 driver_number = row['DriverNumber']
@@ -462,21 +480,21 @@ def _engineer_features(full_data):
             .reindex(full_data.index)
         )
     else:
-        full_data['DeltaToBestQuali'] = np.nan
-        full_data['DeltaToNext'] = np.nan
+        full_data['DeltaToBestQuali'] = nan
+        full_data['DeltaToNext'] = nan
     if 'BestQualiTime' in full_data.columns:
         team_mean_q = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('mean')
         team_size = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('size')
-        full_data['DeltaToTeammateQuali'] = np.where(team_size > 1, (full_data['BestQualiTime'] - team_mean_q) * 2, np.nan)
+        full_data['DeltaToTeammateQuali'] = where(team_size > 1, (full_data['BestQualiTime'] - team_mean_q) * 2, nan)
     else:
-        full_data['DeltaToTeammateQuali'] = np.nan
+        full_data['DeltaToTeammateQuali'] = nan
     if 'Q1Time' in full_data.columns and 'Q3Time' in full_data.columns:
         full_data['QualiSessionGain'] = full_data['Q1Time'] - full_data['Q3Time']
         full_data['QualiSessionGain'] = full_data.groupby(['Season', 'RaceNumber'])['QualiSessionGain'].transform(
             lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0
         )
     else:
-        full_data['QualiSessionGain'] = np.nan
+        full_data['QualiSessionGain'] = nan
     full_data.sort_values(['DriverNumber', 'Season', 'RaceNumber'], inplace=True)
     full_data['ExperienceCount'] = full_data.groupby('DriverNumber').cumcount() + 1
     full_data['IsRookie'] = (full_data['ExperienceCount'] == 1).astype(int)
@@ -566,7 +584,7 @@ def _engineer_features(full_data):
         rank = final_pts.rank(method='dense', ascending=False)
         prev_year_map[yr] = rank.to_dict()
     full_data['PrevYearConstructorRank'] = full_data.apply(
-        lambda r: prev_year_map.get(r['Season'], {}).get(r['HistoricalTeam'], np.nan),
+        lambda r: prev_year_map.get(r['Season'], {}).get(r['HistoricalTeam'], nan),
         axis=1
     )
     tier_map = {}
@@ -625,26 +643,26 @@ def _engineer_features(full_data):
                 lap_map[circ] = pd.to_numeric(laptime, errors='coerce')
             except Exception:
                 meta = CIRCUIT_METADATA.get(circ, {})
-                circuit_lengths[circ] = np.nan
-                corners_map[circ] = meta.get('NumCorners', np.nan)
-                drs_map[circ] = meta.get('DRSZones', np.nan)
-                lap_map[circ] = meta.get('StdLapTime', np.nan)
+                circuit_lengths[circ] = nan
+                corners_map[circ] = meta.get('NumCorners', nan)
+                drs_map[circ] = meta.get('DRSZones', nan)
+                lap_map[circ] = meta.get('StdLapTime', nan)
         full_data['CircuitLength'] = full_data['Circuit'].map(circuit_lengths)
         full_data['NumCorners'] = full_data['Circuit'].map(corners_map)
         full_data['DRSZones'] = full_data['Circuit'].map(drs_map)
         full_data['StdLapTime'] = full_data['Circuit'].map(lap_map)
     except Exception:
         full_data['CircuitLength'] = full_data['Circuit'].map(
-            lambda c: CIRCUIT_METADATA.get(c, {}).get('CircuitLength', np.nan)
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('CircuitLength', nan)
         )
         full_data['NumCorners'] = full_data['Circuit'].map(
-            lambda c: CIRCUIT_METADATA.get(c, {}).get('NumCorners', np.nan)
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('NumCorners', nan)
         )
         full_data['DRSZones'] = full_data['Circuit'].map(
-            lambda c: CIRCUIT_METADATA.get(c, {}).get('DRSZones', np.nan)
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('DRSZones', nan)
         )
         full_data['StdLapTime'] = full_data['Circuit'].map(
-            lambda c: CIRCUIT_METADATA.get(c, {}).get('StdLapTime', np.nan)
+            lambda c: CIRCUIT_METADATA.get(c, {}).get('StdLapTime', nan)
         )
     TRACK_TYPE = {
         'Monaco Grand Prix': 'street',
@@ -712,6 +730,14 @@ def _engineer_features(full_data):
     full_data['ConstructorStanding'] = full_data['ConstructorStanding'].fillna(full_data['ConstructorStanding'].max())
     full_data['PrevYearConstructorRank'] = full_data['PrevYearConstructorRank'].fillna(
         full_data['PrevYearConstructorRank'].max())
+
+    required_columns = [
+        'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
+        'MissedQuali', 'SprintFinish', 'FP3LongRunTime'
+    ]
+    for col in required_columns:
+        if col not in full_data.columns:
+            full_data[col] = nan
     return full_data
 
 
@@ -721,7 +747,6 @@ def _prepare_features(
     team_encoder=None,
     circuit_encoder=None,
     top_circuits=None,
-    top_teams=None,
 ):
     full_data = full_data.copy()
     if "HistoricalTeam" in full_data.columns:
@@ -746,19 +771,14 @@ def _prepare_features(
             team_encoder,
             circuit_encoder,
             top_circuits,
-            [0, 1, 2, 3],
         )
     if "Team" not in full_data.columns:
         full_data["Team"] = "Unknown Team"
     if "Circuit" not in full_data.columns:
         full_data["Circuit"] = "Unknown Circuit"
     for col in base_cols:
-        if col not in full_data.columns:
-            full_data[col] = np.nan
-        full_data[col] = pd.to_numeric(full_data[col], errors="coerce")
+        full_data[col] = to_numeric(full_data[col], errors="coerce")
     full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
-    if top_teams is None:
-        top_teams = [0, 1, 2, 3]
     if team_encoder is None:
         team_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         team_encoded = team_encoder.fit_transform(full_data[["TeamTier"]])
@@ -774,7 +794,7 @@ def _prepare_features(
         top_circuits = (
             full_data["Circuit"].value_counts().nlargest(10).index.tolist()
         )
-    full_data["CircuitGrp"] = np.where(
+    full_data["CircuitGrp"] = where(
         full_data["Circuit"].isin(top_circuits), full_data["Circuit"], "Other"
     )
     if circuit_encoder is None:
@@ -796,7 +816,7 @@ def _prepare_features(
         team_df.reset_index(drop=True),
         circuit_df.reset_index(drop=True)
     ], axis=1)
-    return features, team_encoder, circuit_encoder, top_circuits, top_teams
+    return features, team_encoder, circuit_encoder, top_circuits
 
 
 def _encode_features(
@@ -805,7 +825,6 @@ def _encode_features(
     team_encoder=None,
     circuit_encoder=None,
     top_circuits=None,
-    top_teams=None,
 ):
     return _prepare_features(
         full_data,
@@ -813,7 +832,6 @@ def _encode_features(
         team_encoder,
         circuit_encoder,
         top_circuits,
-        top_teams,
     )
 
 
@@ -833,4 +851,5 @@ __all__ = [
     '_engineer_features',
     '_prepare_features',
     '_encode_features',
+    'race_cols',
 ]
