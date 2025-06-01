@@ -14,6 +14,33 @@ from sklearn.model_selection import train_test_split
 logger = logging.getLogger(__name__)
 
 
+def _fit_xgb_ranker(model, X, y, *, group=None, eval_set=None, eval_group=None, early_stopping_rounds=20, verbose=False):
+    """Fit ``XGBRanker`` handling early stopping across versions."""
+    try:
+        model.fit(
+            X,
+            y,
+            group=group,
+            eval_set=eval_set,
+            eval_group=eval_group,
+            early_stopping_rounds=early_stopping_rounds,
+            verbose=verbose,
+        )
+    except TypeError:
+        import xgboost as xgb
+
+        model.fit(
+            X,
+            y,
+            group=group,
+            eval_set=eval_set,
+            eval_group=eval_group,
+            callbacks=[xgb.callback.EarlyStopping(rounds=early_stopping_rounds)],
+            verbose=verbose,
+        )
+    return model
+
+
 class SeasonSplit:
     def __init__(self, seasons: Iterable[int]):
         self.seasons = seasons
@@ -72,7 +99,8 @@ def _train_model(features, target, cv, debug=False):
             val_groups = (
                 val_feat.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
             )
-            model.fit(
+            _fit_xgb_ranker(
+                model,
                 train_feat,
                 target.iloc[train_idx].reset_index(drop=True),
                 group=train_groups,
@@ -98,7 +126,8 @@ def _train_model(features, target, cv, debug=False):
     group_dev = build_group_list(X_dev)
 
     model = XGBRanker(objective="rank:pairwise", random_state=42, **best_params)
-    model.fit(
+    _fit_xgb_ranker(
+        model,
         X_full_train,
         y_full_train,
         group=group_full_train,
