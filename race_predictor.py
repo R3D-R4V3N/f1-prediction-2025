@@ -10,7 +10,8 @@ import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import TimeSeriesSplit
-from xgboost import XGBRegressor
+from xgboost import XGBRegressor, plot_importance
+import matplotlib.pyplot as plt
 import optuna
 
 warnings.filterwarnings('ignore')
@@ -318,15 +319,64 @@ def _add_driver_team_info(full_data, seasons):
 
 
 def _engineer_features(full_data):
-    full_data['Position'] = pd.to_numeric(full_data['Position'], errors='coerce').fillna(25)
-    full_data['GridPosition'] = pd.to_numeric(full_data['GridPosition'], errors='coerce').fillna(25)
-    full_data['AirTemp'] = pd.to_numeric(full_data['AirTemp'], errors='coerce')
-    full_data['TrackTemp'] = pd.to_numeric(full_data['TrackTemp'], errors='coerce')
-    full_data['Rainfall'] = pd.to_numeric(full_data['Rainfall'], errors='coerce')
-    full_data['OvertakingDifficulty'] = pd.to_numeric(full_data['OvertakingDifficulty'], errors='coerce')
-    full_data['BestQualiTime'] = pd.to_numeric(full_data['BestQualiTime'], errors='coerce')
-    full_data['QualiPosition'] = pd.to_numeric(full_data['QualiPosition'], errors='coerce')
-    full_data['FP3BestTime'] = pd.to_numeric(full_data['FP3BestTime'], errors='coerce')
+    full_data['Position'] = pd.to_numeric(full_data.get('Position'), errors='coerce').fillna(25)
+    full_data['GridPosition'] = pd.to_numeric(full_data.get('GridPosition'), errors='coerce').fillna(25)
+    full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
+    full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
+    full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
+    full_data['OvertakingDifficulty'] = pd.to_numeric(full_data.get('OvertakingDifficulty'), errors='coerce')
+    full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
+    full_data['QualiPosition'] = pd.to_numeric(full_data.get('QualiPosition'), errors='coerce')
+    full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
+    if 'GridDropCount' in full_data.columns:
+        full_data['GridDropCount'] = pd.to_numeric(full_data['GridDropCount'], errors='coerce').fillna(0)
+    else:
+        full_data['GridDropCount'] = 0
+
+    # Convert qualifying session columns if present
+    if 'Q1Time' not in full_data.columns and 'Q1' in full_data.columns:
+        full_data['Q1Time'] = pd.to_timedelta(full_data['Q1'], errors='coerce').dt.total_seconds()
+    if 'Q3Time' not in full_data.columns and 'Q3' in full_data.columns:
+        full_data['Q3Time'] = pd.to_timedelta(full_data['Q3'], errors='coerce').dt.total_seconds()
+    if 'Q1Time' in full_data.columns:
+        full_data['Q1Time'] = pd.to_numeric(full_data['Q1Time'], errors='coerce')
+    if 'Q3Time' in full_data.columns:
+        full_data['Q3Time'] = pd.to_numeric(full_data['Q3Time'], errors='coerce')
+
+    # Determine DNFs using status information when available
+    if 'Status' in full_data.columns:
+        full_data['DidNotFinish'] = full_data['Status'].str.lower() != 'finished'
+    else:
+        full_data['DidNotFinish'] = full_data['Position'] > 20
+
+    # Delta to fastest qualifier in the event
+    if 'BestQualiTime' in full_data.columns:
+        event_fastest = full_data.groupby(['Season', 'RaceNumber'])['BestQualiTime'].transform('min')
+        full_data['DeltaToBestQuali'] = full_data['BestQualiTime'] - event_fastest
+    else:
+        full_data['DeltaToBestQuali'] = np.nan
+
+    # Delta to team mate qualifying time
+    if 'BestQualiTime' in full_data.columns:
+        team_mean_q = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('mean')
+        team_size = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('size')
+        full_data['DeltaToTeammateQuali'] = np.where(team_size > 1, (full_data['BestQualiTime'] - team_mean_q) * 2, np.nan)
+    else:
+        full_data['DeltaToTeammateQuali'] = np.nan
+
+    # Delta to team mate finish position
+    team_mean_pos = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['Position'].transform('mean')
+    team_size_pos = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['Position'].transform('size')
+    full_data['DeltaToTeammateFinish'] = np.where(team_size_pos > 1, (full_data['Position'] - team_mean_pos) * 2, np.nan)
+
+    # Qualifying session gain (Q3 - Q1) normalized per race
+    if 'Q1Time' in full_data.columns and 'Q3Time' in full_data.columns:
+        full_data['QualiSessionGain'] = full_data['Q1Time'] - full_data['Q3Time']
+        full_data['QualiSessionGain'] = full_data.groupby(['Season', 'RaceNumber'])['QualiSessionGain'].transform(
+            lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0
+        )
+    else:
+        full_data['QualiSessionGain'] = np.nan
 
     full_data.sort_values(['Season', 'RaceNumber'], inplace=True)
     full_data['ExperienceCount'] = full_data.groupby('DriverNumber').cumcount() + 1
@@ -352,10 +402,10 @@ def _engineer_features(full_data):
     )
     full_data['RecentAvgPoints'] = full_data['RecentAvgPoints'].fillna(0)
 
-    driver_track = full_data.groupby(['DriverNumber', 'Circuit'])['Position'].agg(
-        DriverAvgTrackFinish='mean',
-        DriverTrackPodiums=lambda x: (x <= 3).sum(),
-        DriverTrackDNFs=lambda x: (x > 20).sum(),
+    driver_track = full_data.groupby(['DriverNumber', 'Circuit']).agg(
+        DriverAvgTrackFinish=('Position', 'mean'),
+        DriverTrackPodiums=('Position', lambda x: (x <= 3).sum()),
+        DriverTrackDNFs=('DidNotFinish', 'sum'),
     ).reset_index()
     full_data = pd.merge(full_data, driver_track, on=['DriverNumber', 'Circuit'], how='left')
 
@@ -368,9 +418,9 @@ def _engineer_features(full_data):
         .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
     )
     full_data['TeamReliability'] = (
-        full_data.groupby('HistoricalTeam')['Position']
+        full_data.groupby('HistoricalTeam')['DidNotFinish']
         .rolling(window=5, min_periods=1)
-        .apply(lambda x: (x > 20).sum())
+        .sum()
         .shift()
         .reset_index(level=0, drop=True)
     )
@@ -409,6 +459,12 @@ def _engineer_features(full_data):
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
     full_data['IsStreet'] = full_data['IsStreet'].fillna(0)
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
+    full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
+    full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
+    full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(0)
+    full_data['DeltaToTeammateFinish'] = full_data['DeltaToTeammateFinish'].fillna(0)
+    full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(0)
+    full_data['DidNotFinish'] = full_data['DidNotFinish'].fillna(False)
 
     return full_data
 
@@ -504,8 +560,20 @@ def _encode_features(full_data, base_cols, team_encoder=None, circuit_encoder=No
     return _prepare_features(full_data, base_cols, team_encoder, circuit_encoder, top_circuits)
 
 
-def _train_model(features, target, cv):
-    """Train an XGBoost model using Bayesian optimization to minimize MAE."""
+def _train_model(features, target, cv, debug=False):
+    """Train an XGBoost model using Bayesian optimization to minimize MAE.
+
+    Parameters
+    ----------
+    features : pd.DataFrame
+        Training feature matrix.
+    target : pd.Series
+        Target values.
+    cv : cross-validator
+        Cross-validation splitter.
+    debug : bool, optional
+        When ``True`` plot the top 10 feature importances after fitting.
+    """
 
     def objective(trial):
         params = {
@@ -538,10 +606,13 @@ def _train_model(features, target, cv):
         **best_params,
     )
     model.fit(features, target)
+    if debug:
+        plot_importance(model, max_num_features=10)
+        plt.show()
     return model
 
 
-def predict_race(grand_prix, year=2025, export_details=False):
+def predict_race(grand_prix, year=2025, export_details=False, debug=False):
     seasons = list(range(2020, year + 1))
     race_data = _load_historical_data(seasons)
     race_data = race_data.reset_index(drop=True)
@@ -610,9 +681,9 @@ def predict_race(grand_prix, year=2025, export_details=False):
 
     # Train race finish model
     target = race_data['Position']
-    model = _train_model(features, target, cv)
+    model = _train_model(features, target, cv, debug)
     # Train grid prediction model
-    grid_model = _train_model(quali_feats, race_data['GridPosition'], cv)
+    grid_model = _train_model(quali_feats, race_data['GridPosition'], cv, debug)
 
     grid_preds_hist = grid_model.predict(quali_feats)
     grid_mae = mean_absolute_error(race_data['GridPosition'], grid_preds_hist)
@@ -621,7 +692,7 @@ def predict_race(grand_prix, year=2025, export_details=False):
     race_feats_with_pred, _, _, _ = _encode_features(
         race_data, race_cols + ['PredGrid'], team_enc, circuit_enc, top_circuits
     )
-    model = _train_model(race_feats_with_pred, target, cv)
+    model = _train_model(race_feats_with_pred, target, cv, debug)
     finish_preds_hist = model.predict(race_feats_with_pred)
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
     features = race_feats_with_pred
@@ -839,5 +910,5 @@ def predict_race(grand_prix, year=2025, export_details=False):
 
 
 if __name__ == '__main__':
-    res = predict_race('Chinese Grand Prix', year=2025, export_details=True)
+    res = predict_race('Chinese Grand Prix', year=2025, export_details=True, debug=False)
     print(res[['Driver', 'Team', 'Grid', 'Final_Position']].head())
