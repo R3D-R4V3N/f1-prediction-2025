@@ -708,6 +708,22 @@ def _engineer_features(full_data):
         axis=1
     )
 
+    # Team tiers based on previous season constructor points
+    tier_map = {}
+    for yr in sorted(full_data['Season'].unique()):
+        prev = full_data[full_data['Season'] == yr - 1]
+        if prev.empty:
+            continue
+        final_pts = prev.groupby('HistoricalTeam')['ConstructorChampPoints'].max()
+        ranks = final_pts.rank(method='dense', ascending=True)
+        pct = (ranks - 1) / max(ranks.max() - 1, 1)
+        tiers = (pct * 4).astype(int).clip(0, 3)
+        tier_map[yr] = tiers.to_dict()
+    full_data['TeamTier'] = full_data.apply(
+        lambda r: tier_map.get(r['Season'], {}).get(r['HistoricalTeam'], 3),
+        axis=1
+    ).astype(int)
+
 
     # Circuit metadata from FastF1
     try:
@@ -873,8 +889,7 @@ def _prepare_features(
         Subset of circuit columns to keep. If ``None`` the 10 most frequent
         circuits are used.
     top_teams : list or None
-        Subset of team columns to keep. If ``None`` the 12 most frequent teams
-        are used.
+        Unused legacy parameter for backward compatibility.
 
     Returns
     -------
@@ -887,7 +902,7 @@ def _prepare_features(
     top_circuits : list
         Names of the circuit columns that were kept.
     top_teams : list
-        Names of the team columns that were kept.
+        Always ``[0, 1, 2, 3]`` representing the team tier columns.
     """
 
     full_data = full_data.copy()
@@ -900,11 +915,10 @@ def _prepare_features(
 
     if full_data.empty:
         team_cols = (
-            team_encoder.get_feature_names_out(["TeamGrp"]).tolist()
+            team_encoder.get_feature_names_out(["TeamTier"]).tolist()
             if team_encoder
-            else []
+            else [f"TeamTier_{i}" for i in range(4)]
         )
-        team_cols = [c.replace("TeamGrp_", "Team_") for c in team_cols]
         circuit_cols = (
             circuit_encoder.get_feature_names_out(["CircuitGrp"]).tolist()
             if circuit_encoder
@@ -919,7 +933,7 @@ def _prepare_features(
             team_encoder,
             circuit_encoder,
             top_circuits,
-            top_teams,
+            [0, 1, 2, 3],
         )
 
     # ``Team`` or ``Circuit`` columns may be missing if the calling code fails to
@@ -943,23 +957,19 @@ def _prepare_features(
     full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
 
     if top_teams is None:
-        top_teams = (
-            full_data["Team"].value_counts().nlargest(12).index.tolist()
-        )
-
-    full_data["TeamGrp"] = np.where(
-        full_data["Team"].isin(top_teams), full_data["Team"], "Other"
-    )
+        top_teams = [0, 1, 2, 3]
 
     if team_encoder is None:
         team_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-        team_encoded = team_encoder.fit_transform(full_data[["TeamGrp"]])
+        team_encoded = team_encoder.fit_transform(full_data[["TeamTier"]])
     else:
-        team_encoded = team_encoder.transform(full_data[["TeamGrp"]])
+        team_encoded = team_encoder.transform(full_data[["TeamTier"]])
     team_df = pd.DataFrame(
-        team_encoded, columns=team_encoder.get_feature_names_out(["TeamGrp"])
+        team_encoded, columns=team_encoder.get_feature_names_out(["TeamTier"])
     )
-    team_df.columns = [c.replace("TeamGrp_", "Team_") for c in team_df.columns]
+    team_df.columns = [c.replace("TeamTier_", "TeamTier_") for c in team_df.columns]
+    team_cols = [f"TeamTier_{i}" for i in range(4)]
+    team_df = team_df.reindex(columns=team_cols, fill_value=0)
 
     if top_circuits is None:
         top_circuits = (
