@@ -749,6 +749,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # ``HistoricalTeam`` column for encoding.
     race_data = race_data.drop(columns=['Team'], errors='ignore')
     race_data = _engineer_features(race_data)
+    # Ensure strict chronological order before creating the feature matrix.
+    race_data.sort_values(["Season", "RaceNumber"], inplace=True)
+    race_data.reset_index(drop=True, inplace=True)
     # Save the engineered dataset used for training and prediction so users can
     # inspect all input values.
     race_data.to_csv("prediction_data.csv", index=False)
@@ -768,6 +771,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     features, team_enc, circuit_enc, top_circuits = _encode_features(
         race_data, race_cols
     )
+    # Align feature order with the chronological race data just to be safe
+    features = features.loc[race_data.index].reset_index(drop=True)
 
     cv = TimeSeriesSplit(n_splits=3)
 
