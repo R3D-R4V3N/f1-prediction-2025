@@ -86,8 +86,9 @@ Downloads FP3, qualifying and race information for every scheduled event in 2025
 
 ## Evaluation Metrics
 
-The training routine optimises mean absolute error on finishing position.
-During training and hold-out evaluation the script also reports:
+The training routine optimises **Spearman rank correlation** on finishing order
+using ``XGBRanker`` with a pairwise ranking objective. During training and
+hold-out evaluation the script also reports:
 
 - **Spearman rank correlation** between predicted and actual results.
 - **Top 1 accuracy** – percentage of races where the predicted winner matches the real winner.

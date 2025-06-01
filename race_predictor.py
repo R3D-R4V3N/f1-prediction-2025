@@ -32,7 +32,7 @@ class SeasonSplit:
 
     def get_n_splits(self, X=None, y=None, groups=None):
         return max(0, len(self.seasons) - 1)
-from xgboost import XGBRegressor, plot_importance
+from xgboost import XGBRanker, plot_importance
 import matplotlib.pyplot as plt
 import optuna
 
@@ -1024,7 +1024,7 @@ def _rank_metrics(actual: pd.Series, preds: np.ndarray) -> dict:
 
 
 def _train_model(features, target, cv, debug=False):
-    """Train an XGBoost model using Bayesian optimization to minimize MAE.
+    """Train an XGBoost ranker using Bayesian optimization to maximize Spearman correlation.
 
     Parameters
     ----------
@@ -1039,8 +1039,8 @@ def _train_model(features, target, cv, debug=False):
 
     Returns
     -------
-    Tuple[XGBRegressor, float]
-        The trained model and the best cross-validation MAE score.
+    Tuple[XGBRanker, float]
+        The trained model and the best cross-validation Spearman score.
     """
 
     def objective(trial):
@@ -1058,8 +1058,8 @@ def _train_model(features, target, cv, debug=False):
                 'min_child_weight', [1, 3, 5, 7, 10]
             ),
         }
-        model = XGBRegressor(
-            objective='reg:squarederror',
+        model = XGBRanker(
+            objective="rank:pairwise",
             random_state=42,
             **params,
         )
@@ -1067,21 +1067,45 @@ def _train_model(features, target, cv, debug=False):
         scores = []
         splits = cv.split(features) if hasattr(cv, "split") else cv
         for train_idx, val_idx in splits:
-            model.fit(features.iloc[train_idx], target.iloc[train_idx])
-            preds = model.predict(features.iloc[val_idx])
-            scores.append(mean_absolute_error(target.iloc[val_idx], preds))
+            train_feat = features.iloc[train_idx].reset_index(drop=True)
+            val_feat = features.iloc[val_idx].reset_index(drop=True)
+            train_groups = (
+                train_feat.groupby(["Season", "RaceNumber"], sort=False)
+                .size()
+                .to_list()
+            )
+            val_groups = (
+                val_feat.groupby(["Season", "RaceNumber"], sort=False)
+                .size()
+                .to_list()
+            )
+            model.fit(
+                train_feat,
+                target.iloc[train_idx].reset_index(drop=True),
+                group=train_groups,
+                eval_set=[(val_feat, target.iloc[val_idx].reset_index(drop=True))],
+                eval_group=[val_groups],
+                verbose=False,
+                early_stopping_rounds=20,
+            )
+            preds = model.predict(val_feat)
+            rho = spearmanr(target.iloc[val_idx].reset_index(drop=True), preds).correlation
+            scores.append(rho)
         return np.mean(scores)
 
-    study = optuna.create_study(direction='minimize')
+    study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=60, show_progress_bar=False)
     best_params = study.best_params
     best_score = study.best_value
-    model = XGBRegressor(
-        objective='reg:squarederror',
+    model = XGBRanker(
+        objective="rank:pairwise",
         random_state=42,
         **best_params,
     )
-    model.fit(features, target)
+    full_group = (
+        features.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
+    )
+    model.fit(features, target, group=full_group)
     if debug:
         plot_importance(model, max_num_features=10)
         plt.show()
@@ -1180,7 +1204,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     # Train race finish model
     target = race_data['Position']
-    model, cv_mae = _train_model(features, target, cv, debug)
+    model, cv_rho = _train_model(features, target, cv, debug)
 
     finish_preds_hist = model.predict(features)
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
@@ -1612,7 +1636,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     if holdout_mae is not None:
         print(
-            f"📊 CV MAE: {cv_mae:.2f} -- Hold-out MAE: {holdout_mae:.2f} -- Training MAE: {finish_mae:.2f}"
+            f"📊 CV Spearman: {cv_rho:.2f} -- Hold-out MAE: {holdout_mae:.2f} -- Training MAE: {finish_mae:.2f}"
         )
         print(
             f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} (train) / {holdout_rank['spearman']:.2f} (hold-out) "
@@ -1620,7 +1644,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             f"-- Top3: {train_rank['top3']*100:.0f}% / {holdout_rank['top3']*100:.0f}%"
         )
     else:
-        print(f"📊 CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
+        print(f"📊 CV Spearman: {cv_rho:.2f} -- Training MAE: {finish_mae:.2f}")
         print(
             f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} -- "
             f"Top1: {train_rank['top1']*100:.0f}% -- Top3: {train_rank['top3']*100:.0f}%"
