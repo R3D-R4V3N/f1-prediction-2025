@@ -293,8 +293,11 @@ def _load_historical_data(seasons, overtake_map=None):
                         on='DriverNumber',
                         how='left'
                     )
-                    # Use Q3 ranking for grid, falling back to qualifying order if needed.
-                    results['GridPosition'] = results['GridFromQ3'].fillna(results['QualiPosition'])
+                    # Preserve the official GridPosition from the race result.
+                    # Only fill missing values using qualifying information.
+                    if 'GridPosition' in results.columns:
+                        results['GridPosition'] = results['GridPosition'].fillna(results['QualiPosition'])
+                        results['GridPosition'] = results['GridPosition'].fillna(results['GridFromQ3'])
                 except Exception:
                     results['BestQualiTime'] = np.nan
                     results['QualiPosition'] = np.nan
