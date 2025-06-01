@@ -827,6 +827,8 @@ def _prepare_features(
     if "Circuit" not in full_data.columns:
         full_data["Circuit"] = "Unknown Circuit"
     for col in base_cols:
+        if col not in full_data.columns:
+            full_data[col] = nan
         full_data[col] = to_numeric(full_data[col], errors="coerce")
     full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
     team_cols = [f"TeamTier_{i}" for i in range(4)]
