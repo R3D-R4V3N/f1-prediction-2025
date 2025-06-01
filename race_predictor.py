@@ -771,7 +771,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability',
         'DriverChampPoints', 'ConstructorChampPoints',
-        'DriverStanding', 'ConstructorStanding'
+        'DriverStanding', 'ConstructorStanding',
+        'AirTemp', 'TrackTemp', 'Rainfall', 'AverageOvertakes'
     ]
 
     # Hold-out evaluation on the last completed season
@@ -1038,6 +1039,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'ConstructorChampPoints': constructor_pts_map.get(d['Team'], 0.0),
             'DriverStanding': int(driver_stand_map.get(d['DriverNumber'], 0)),
             'ConstructorStanding': int(constructor_stand_map.get(d['Team'], 0)),
+            'AirTemp': default_air,
+            'TrackTemp': default_track,
+            'Rainfall': default_rain,
+            'AverageOvertakes': default_overtake,
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
