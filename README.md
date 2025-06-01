@@ -17,7 +17,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 The model is trained on event data from the 2020‑2025 seasons. For each race it collects:
 
 1. **Driver and team results** from FastF1 with fallbacks to the Ergast API.
-2. **Qualifying and practice times** for each driver.
+2. **Qualifying and practice times** for each driver, including the time gap to the next fastest qualifier.
 3. **Weather data** (air temperature, track temperature, rainfall).
 4. **Average overtakes** per circuit calculated with `estimate_overtakes.py`.
 5. **Championship standings and circuit metadata** such as track length.
