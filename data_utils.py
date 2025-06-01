@@ -458,15 +458,17 @@ def _engineer_features(full_data):
         full_data.get('Points', pd.Series(nan, index=full_data.index)),
         errors='coerce'
     ).fillna(0)
-    # Convert time columns to seconds so missing values remain NaN
     full_data['BestQualiTime'] = pd.to_timedelta(
-        full_data.get('BestQualiTime'), errors='coerce'
+        full_data.get('BestQualiTime', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
     ).dt.total_seconds()
     full_data['FP3BestTime'] = pd.to_timedelta(
-        full_data.get('FP3BestTime'), errors='coerce'
+        full_data.get('FP3BestTime', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
     ).dt.total_seconds()
     full_data['FP3LongRunTime'] = pd.to_timedelta(
-        full_data.get('FP3LongRunTime'), errors='coerce'
+        full_data.get('FP3LongRunTime', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
     ).dt.total_seconds()
     full_data['SprintFinish'] = pd.to_numeric(
         full_data.get('SprintFinish', pd.Series(nan, index=full_data.index)),
