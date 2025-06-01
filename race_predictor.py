@@ -955,6 +955,14 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         default_fp3 = race_data['FP3BestTime'].mean()
     default_overtake = race_data['AverageOvertakes'].mean()
 
+    # Determine the round number for the target event so season-based
+    # rolling features can mirror the training logic.
+    schedule = fastf1.get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
+    this_race_number = int(match.iloc[0]["RoundNumber"])
+
     try:
         from fastf1.circuit_info import get_circuit_info
         circuit_lengths = {}
@@ -1115,19 +1123,23 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         else:
             fp3_time = default_fp3
 
-        hist = race_data[race_data['DriverNumber'] == d['DriverNumber']].sort_values(['Season', 'RaceNumber'])
-        last5 = hist.tail(5)
-        last3 = hist.tail(3)
-        if hist.empty:
+        driver_num = int(d['DriverNumber'])
+        same_season = race_data[
+            (race_data['DriverNumber'] == driver_num) &
+            (race_data['Season'] == year)
+        ].sort_values('RaceNumber')
+        prev_races = same_season[same_season['RaceNumber'] < this_race_number]
+
+        if prev_races.empty:
             recent_avg_pos = overall_avg_pos
             recent_avg_pts = 0.0
             recent3_avg = overall_avg_pos
             recent5_avg = overall_avg_pos
         else:
-            recent_avg_pos = last5['Position'].mean()
-            recent_avg_pts = last5['Points'].mean()
-            recent3_avg = last3['Position'].mean()
-            recent5_avg = last5['Position'].mean()
+            recent_avg_pos = prev_races['Position'].tail(5).mean()
+            recent_avg_pts = prev_races['Points'].tail(5).mean()
+            recent3_avg = prev_races['Position'].tail(3).mean()
+            recent5_avg = prev_races['Position'].tail(5).mean()
         pred_rows.append({
             'GridPosition': grid_pos,
             'Season': year,
