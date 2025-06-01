@@ -1,5 +1,6 @@
 import os
 import statistics
+import logging
 from typing import Iterable, List
 
 import numpy as np
@@ -10,6 +11,8 @@ except ImportError as exc:
     raise SystemExit("fastf1 is required to run this script. Install via 'pip install fastf1'.") from exc
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def _count_position_changes(laps: pd.DataFrame) -> int:
@@ -93,7 +96,9 @@ def average_overtakes(grand_prix: str, years: Iterable[int]) -> float:
         try:
             counts.append(count_overtakes(yr, grand_prix))
         except Exception as err:
-            print(f"⚠️ Failed to process {yr} {grand_prix}: {err}")
+            logger.warning(
+                "Failed to process %s %s: %s", yr, grand_prix, err
+            )
     if not counts:
         raise RuntimeError("No races processed")
 
@@ -111,7 +116,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     avg = average_overtakes(args.grand_prix, args.years)
-    print(f"📈 Weighted average overtakes at {args.grand_prix}: {avg:.1f}")
+    logger.info(
+        "Weighted average overtakes at %s: %.1f", args.grand_prix, avg
+    )
 
     # Update or create the CSV used by the prediction model
     out_file = "overtake_stats.csv"

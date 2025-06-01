@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import fastf1
+import logging
 from sklearn.metrics import mean_absolute_error
 
 from export_race_details import export_race_details
@@ -20,6 +21,8 @@ from data_utils import (
     GRAND_PRIX_LIST,
 )
 from model_utils import _train_model, _rank_metrics
+
+logger = logging.getLogger(__name__)
 
 try:
     import shap  # type: ignore
@@ -64,7 +67,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             avg = average_overtakes(grand_prix, years_for_avg)
             overtake_map[grand_prix] = avg
         except Exception as err:
-            print(f"⚠️ Could not compute overtakes for {grand_prix}: {err}")
+            logger.warning(
+                "Could not compute overtakes for %s: %s", grand_prix, err
+            )
 
     race_data = _load_historical_data(seasons, overtake_map)
     race_data = _clean_historical_data(race_data).reset_index(drop=True)
@@ -534,7 +539,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(pred_features)
         except Exception as err:
-            print(f"⚠️ Could not compute SHAP values: {err}")
+            logger.warning("Could not compute SHAP values: %s", err)
             shap_values = None
 
     results = pd.DataFrame({
@@ -552,9 +557,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     if export_details:
         try:
             detail_path = export_race_details(year, grand_prix)
-            print(f"📁 Saved session data to {detail_path}")
+            logger.info("Saved session data to %s", detail_path)
         except Exception as err:
-            print(f"⚠️ Could not export session data: {err}")
+            logger.warning("Could not export session data: %s", err)
     details = None
     if debug:
         details = {
@@ -564,23 +569,38 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         }
 
     if holdout_mae is not None:
-        print(
-            f"📊 CV Spearman: {cv_rho:.2f} -- Hold-out MAE: {holdout_mae:.2f} -- Training MAE: {finish_mae:.2f}"
+        logger.info(
+            "CV Spearman: %.2f -- Hold-out MAE: %.2f -- Training MAE: %.2f",
+            cv_rho,
+            holdout_mae,
+            finish_mae,
         )
-        print(
-            f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} (train) / {holdout_rank['spearman']:.2f} (hold-out) "
-            f"-- Top1: {train_rank['top1']*100:.0f}% / {holdout_rank['top1']*100:.0f}% "
-            f"-- Top3: {train_rank['top3']*100:.0f}% / {holdout_rank['top3']*100:.0f}%"
+        logger.info(
+            "Spearman \u03c1: %.2f (train) / %.2f (hold-out) -- "
+            "Top1: %.0f%% / %.0f%% -- Top3: %.0f%% / %.0f%%",
+            train_rank["spearman"],
+            holdout_rank["spearman"],
+            train_rank["top1"] * 100,
+            holdout_rank["top1"] * 100,
+            train_rank["top3"] * 100,
+            holdout_rank["top3"] * 100,
         )
     else:
-        print(f"📊 CV Spearman: {cv_rho:.2f} -- Training MAE: {finish_mae:.2f}")
-        print(
-            f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} -- "
-            f"Top1: {train_rank['top1']*100:.0f}% -- Top3: {train_rank['top3']*100:.0f}%"
+        logger.info(
+            "CV Spearman: %.2f -- Training MAE: %.2f", cv_rho, finish_mae
+        )
+        logger.info(
+            "Spearman \u03c1: %.2f -- Top1: %.0f%% -- Top3: %.0f%%",
+            train_rank["spearman"],
+            train_rank["top1"] * 100,
+            train_rank["top3"] * 100,
         )
     return (results, details) if debug else results
 
 
 if __name__ == '__main__':
     res = predict_race('Chinese Grand Prix', year=2025, export_details=True, debug=False)
-    print(res[['Driver', 'Team', 'Grid', 'Final_Position']].head())
+    logger.info(
+        "\n%s",
+        res[['Driver', 'Team', 'Grid', 'Final_Position']].head(),
+    )
