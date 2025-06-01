@@ -998,49 +998,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
-    team_strength = (
-        race_data[race_data['Season'] == year]
-        .groupby('HistoricalTeam')['Position']
-        .mean()
-        .reset_index()
-        .rename(columns={'Position': 'TeamAvgPosition'})
-    )
-    if team_strength.empty and year > 2020:
-        team_strength = (
-            race_data[race_data['Season'] == year - 1]
-            .groupby('HistoricalTeam')['Position']
-            .mean()
-            .reset_index()
-            .rename(columns={'Position': 'TeamAvgPosition'})
-        )
-    team_recent_quali = (
-        race_data.groupby('HistoricalTeam')['QualiPosition']
-        .rolling(window=5, min_periods=1)
-        .mean()
-        .reset_index()
-        .rename(columns={'QualiPosition': 'TeamRecentQuali'})
-    )
-    team_recent_finish = (
-        race_data.groupby('HistoricalTeam')['Position']
-        .rolling(window=5, min_periods=1)
-        .mean()
-        .reset_index()
-        .rename(columns={'Position': 'TeamRecentFinish'})
-    )
-    team_reliability = (
-        race_data.groupby('HistoricalTeam')['DidNotFinish']
-        .rolling(window=5, min_periods=1)
-        .sum()
-        .reset_index()
-        .rename(columns={'DidNotFinish': 'TeamReliability'})
-    )
-    team_recent_quali = team_recent_quali.groupby('HistoricalTeam').last().reset_index()
-    team_recent_finish = team_recent_finish.groupby('HistoricalTeam').last().reset_index()
-    team_reliability = team_reliability.groupby('HistoricalTeam').last().reset_index()
-    team_info = team_strength.merge(team_recent_quali, on='HistoricalTeam', how='left')
-    team_info = team_info.merge(team_recent_finish, on='HistoricalTeam', how='left')
-    team_info = team_info.merge(team_reliability, on='HistoricalTeam', how='left')
-    team_info = team_info.rename(columns={'HistoricalTeam': 'Team'})
+    default_team_avg = race_data['Position'].mean()
+    default_team_quali = race_data['QualiPosition'].mean()
 
     driver_stats_lookup = race_data.set_index(['DriverNumber', 'Circuit'])[
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
@@ -1086,17 +1045,35 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     overall_avg_pos = race_data['Position'].mean()
     for _, d in driver_iter.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']]) + 1
-        team_row = team_info[team_info['Team'] == d['Team']]
-        if len(team_row) == 0:
-            team_avg_pos = team_info['TeamAvgPosition'].mean()
-            team_recent_q = team_info['TeamRecentQuali'].mean()
-            team_recent_f = team_info['TeamRecentFinish'].mean()
-            team_rel = 0.0
+        team_name = d['Team']
+        team_same_season = race_data[
+            (race_data['HistoricalTeam'] == team_name) &
+            (race_data['Season'] == year)
+        ].sort_values('RaceNumber')
+        team_prev = team_same_season[team_same_season['RaceNumber'] < this_race_number]
+
+        if len(team_prev) > 0:
+            team_avg_pos = team_prev['Position'].mean()
         else:
-            team_avg_pos = team_row.iloc[0]['TeamAvgPosition']
-            team_recent_q = team_row.iloc[0]['TeamRecentQuali']
-            team_recent_f = team_row.iloc[0]['TeamRecentFinish']
-            team_rel = team_row.iloc[0]['TeamReliability']
+            team_avg_pos = default_team_avg
+
+        team_prev_q = team_prev['QualiPosition']
+        if len(team_prev_q) > 0:
+            team_recent_q = team_prev_q.tail(5).mean()
+        else:
+            team_recent_q = default_team_quali
+
+        team_prev_f = team_prev['Position']
+        if len(team_prev_f) > 0:
+            team_recent_f = team_prev_f.tail(5).mean()
+        else:
+            team_recent_f = default_team_avg
+
+        team_prev_dnf = team_prev['DidNotFinish']
+        if len(team_prev_dnf) > 0:
+            team_rel = team_prev_dnf.tail(5).sum()
+        else:
+            team_rel = 0.0
 
         stats = driver_stats_lookup.loc[(d['DriverNumber'], grand_prix)] if (d['DriverNumber'], grand_prix) in driver_stats_lookup.index else None
         if stats is None:
