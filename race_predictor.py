@@ -151,8 +151,24 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
 
 
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
-    """Return average overtake counts mapped by circuit name."""
-    df = pd.read_csv(path)
+    """Return average overtake counts mapped by circuit name.
+
+    If the CSV does not exist or is empty an empty dictionary is returned
+    instead of raising an exception.  This allows the application to run
+    even when no overtake statistics have been generated yet.
+    """
+
+    if not os.path.exists(path):
+        return {}
+
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {}
+
+    if df.empty or "Circuit" not in df.columns or "AverageOvertakes" not in df.columns:
+        return {}
+
     return df.set_index("Circuit")["AverageOvertakes"].to_dict()
 
 # Average overtakes per circuit used for model training
