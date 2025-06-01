@@ -11,7 +11,27 @@ import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import mean_absolute_error
 from scipy.stats import spearmanr
-from sklearn.model_selection import TimeSeriesSplit
+
+
+
+class SeasonSplit:
+    """Cross-validator that yields whole seasons as validation folds."""
+
+    def __init__(self, seasons, season_col="Season"):
+        self.seasons = list(seasons)
+        self.season_col = season_col
+
+    def split(self, X):
+        seasons_sorted = [s for s in self.seasons if s in X[self.season_col].unique()]
+        seasons_sorted.sort()
+        for i in range(1, len(seasons_sorted)):
+            train_idx = X.index[X[self.season_col].isin(seasons_sorted[:i])].to_numpy()
+            val_idx = X.index[X[self.season_col] == seasons_sorted[i]].to_numpy()
+            if len(train_idx) and len(val_idx):
+                yield train_idx, val_idx
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return max(0, len(self.seasons) - 1)
 from xgboost import XGBRegressor, plot_importance
 import matplotlib.pyplot as plt
 import optuna
@@ -1045,7 +1065,8 @@ def _train_model(features, target, cv, debug=False):
         )
 
         scores = []
-        for train_idx, val_idx in cv.split(features):
+        splits = cv.split(features) if hasattr(cv, "split") else cv
+        for train_idx, val_idx in splits:
             model.fit(features.iloc[train_idx], target.iloc[train_idx])
             preds = model.predict(features.iloc[val_idx])
             scores.append(mean_absolute_error(target.iloc[val_idx], preds))
@@ -1139,8 +1160,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             ho_top_circuits,
             ho_top_teams,
         )
-        cv_ho = TimeSeriesSplit(n_splits=5)
-        ho_model, _ = _train_model(ho_feat, train_df['Position'], cv_ho, debug)
+        ho_cv = SeasonSplit(sorted(train_df['Season'].unique()))
+        ho_model, _ = _train_model(ho_feat, train_df['Position'], ho_cv, debug)
         ho_preds = ho_model.predict(ho_val_feat)
         holdout_mae = mean_absolute_error(holdout_df['Position'], ho_preds)
         holdout_rank = _rank_metrics(holdout_df['Position'], ho_preds)
@@ -1155,7 +1176,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Align feature order with the chronological race data just to be safe
     features = features.loc[race_data.index].reset_index(drop=True)
 
-    cv = TimeSeriesSplit(n_splits=5)
+    cv = SeasonSplit(sorted(race_data['Season'].unique()))
 
     # Train race finish model
     target = race_data['Position']
