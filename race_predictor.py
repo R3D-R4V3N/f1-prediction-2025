@@ -415,22 +415,26 @@ def _engineer_features(full_data):
     full_data['ExperienceCount'] = full_data.groupby('DriverNumber').cumcount() + 1
     full_data['RecentAvgPosition'] = (
         full_data.groupby('DriverNumber')['Position']
-        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
+        .reset_index(level=0, drop=True)
     )
     full_data['RecentAvgPosition'] = full_data['RecentAvgPosition'].fillna(full_data['Position'].mean())
     full_data['Recent3AvgFinish'] = (
         full_data.groupby('DriverNumber')['Position']
-        .rolling(window=3, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+        .apply(lambda s: s.shift().rolling(window=3, min_periods=1).mean())
+        .reset_index(level=0, drop=True)
     )
     full_data['Recent3AvgFinish'] = full_data['Recent3AvgFinish'].fillna(full_data['Position'].mean())
     full_data['Recent5AvgFinish'] = (
         full_data.groupby('DriverNumber')['Position']
-        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
+        .reset_index(level=0, drop=True)
     )
     full_data['Recent5AvgFinish'] = full_data['Recent5AvgFinish'].fillna(full_data['Position'].mean())
     full_data['RecentAvgPoints'] = (
         full_data.groupby('DriverNumber')['Points']
-        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
+        .reset_index(level=0, drop=True)
     )
     full_data['RecentAvgPoints'] = full_data['RecentAvgPoints'].fillna(0)
 
@@ -443,17 +447,17 @@ def _engineer_features(full_data):
 
     full_data['TeamRecentQuali'] = (
         full_data.groupby('HistoricalTeam')['QualiPosition']
-        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
+        .reset_index(level=0, drop=True)
     )
     full_data['TeamRecentFinish'] = (
         full_data.groupby('HistoricalTeam')['Position']
-        .rolling(window=5, min_periods=1).mean().shift().reset_index(level=0, drop=True)
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
+        .reset_index(level=0, drop=True)
     )
     full_data['TeamReliability'] = (
         full_data.groupby('HistoricalTeam')['DidNotFinish']
-        .rolling(window=5, min_periods=1)
-        .sum()
-        .shift()
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).sum())
         .reset_index(level=0, drop=True)
     )
     full_data['TeamRecentQuali'] = full_data['TeamRecentQuali'].fillna(full_data['QualiPosition'].mean())
