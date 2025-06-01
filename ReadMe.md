@@ -12,10 +12,12 @@ This project uses historical Formula 1 data from the 2020-2025 seasons to build 
 - Team strength assessment
 - Qualifying position influence
 - Driver experience factors
-- Circuit-specific performance patterns
- - Weather conditions and average overtakes metrics derived from
-   historical overtake statistics (`overtake_stats.csv`)
-- Best qualifying and practice session times
+ - Circuit-specific performance patterns
+  - Weather conditions and average overtakes metrics derived from
+    historical overtake statistics (`overtake_stats.csv`)
+ - Best qualifying and practice session times
+ - Championship standings sourced via FastF1/Ergast
+ - Circuit metadata such as track length
 
 The system handles team changes for 2025 (like Hamilton moving to Ferrari) and accommodates rookies through team performance metrics.
 
@@ -79,7 +81,9 @@ This visualization shows:
    - Circuit-specific indicators
    - Weather measurements and average overtakes derived from
      `overtake_stats.csv`
-   - Qualifying and practice session times
+    - Qualifying and practice session times
+    - Championship standings via FastF1/Ergast
+    - Circuit metadata such as track length
 
 3. **Machine Learning Model**
 
