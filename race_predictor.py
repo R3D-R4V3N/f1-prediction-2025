@@ -238,12 +238,16 @@ def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["DriverNumber"].notna()]
     df["Position"] = pd.to_numeric(df["Position"], errors="coerce")
     df["GridPosition"] = pd.to_numeric(df["GridPosition"], errors="coerce")
+    if "SprintFinish" in df.columns:
+        df["SprintFinish"] = pd.to_numeric(df["SprintFinish"], errors="coerce")
     if "Status" in df.columns:
         df["DidNotFinish"] = df["Status"].str.lower() != "finished"
     else:
         df["DidNotFinish"] = df["Position"] > 20
     df["Position"] = df["Position"].clip(1, 20)
     df["GridPosition"] = df["GridPosition"].clip(1, 20)
+    if "SprintFinish" in df.columns:
+        df["SprintFinish"] = df["SprintFinish"].clip(1, 20)
     return df
 
 
@@ -359,6 +363,17 @@ def _load_historical_data(seasons, overtake_map=None):
                     results['FP3BestTime'] = np.nan
                     results['FP3LongRunTime'] = np.nan
 
+                # Sprint race finish position
+                try:
+                    sprint_session = fastf1.get_session(season, rnd, 'S')
+                    sprint_session.load()
+                    sprint_res = sprint_session.results[['DriverNumber', 'Position']].rename(
+                        columns={'Position': 'SprintFinish'}
+                    )
+                    results = results.merge(sprint_res, on='DriverNumber', how='left')
+                except Exception:
+                    results['SprintFinish'] = np.nan
+
                 race_data.append(results)
             except Exception:
                 continue
@@ -405,6 +420,8 @@ def _engineer_features(full_data):
     full_data['QualiPosition'] = pd.to_numeric(full_data.get('QualiPosition'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
     full_data['FP3LongRunTime'] = pd.to_numeric(full_data.get('FP3LongRunTime'), errors='coerce')
+    full_data['SprintFinish'] = pd.to_numeric(full_data.get('SprintFinish'), errors='coerce').fillna(25)
+    full_data['SprintFinish'] = full_data['SprintFinish'].clip(1, 25)
     if 'GridDropCount' in full_data.columns:
         full_data['GridDropCount'] = pd.to_numeric(full_data['GridDropCount'], errors='coerce').fillna(0)
     else:
@@ -600,6 +617,7 @@ def _engineer_features(full_data):
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
     full_data['FP3LongRunTime'] = full_data['FP3LongRunTime'].fillna(full_data['FP3LongRunTime'].mean())
+    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(25)
     full_data['IsStreet'] = full_data['IsStreet'].fillna(0)
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
@@ -908,7 +926,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
         'RecentAvgPosition', 'RecentAvgPoints', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'FP3LongRunTime', 'DeltaToBestQuali',
-        'DeltaToNext',
+        'DeltaToNext', 'SprintFinish',
         'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability',
@@ -1200,6 +1218,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'FP3LongRunTime': fp3_long_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
             'DeltaToNext': d.get('DeltaToNext', default_delta_next),
+            'SprintFinish': 25,
             'Recent3AvgFinish': recent3_avg,
             'Recent5AvgFinish': recent5_avg,
             'DriverAvgTrackFinish': avg_track,
@@ -1252,6 +1271,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     pred_df['FP3LongRunTime'] = (
         pd.to_numeric(pred_df['FP3LongRunTime'], errors='coerce')
         .fillna(race_data['FP3LongRunTime'].mean())
+    )
+    pred_df['SprintFinish'] = (
+        pd.to_numeric(pred_df.get('SprintFinish'), errors='coerce')
+        .fillna(25)
     )
 
     # Save the driver list so the raw input fed to the model can be inspected.
