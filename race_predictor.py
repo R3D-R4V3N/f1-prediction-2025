@@ -148,35 +148,6 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
     df = df.rename(columns={"Driver": "Abbreviation", "BestTime": "FP3BestTime"})
     return df[["Abbreviation", "FP3BestTime", "AvgAirTemp", "AvgTrackTemp", "MaxRainfall"]]
 
-<<<<<<< HEAD
-# Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
-OVERTAKE_DIFFICULTY = {
-    'Bahrain Grand Prix': 2,
-    'Saudi Arabian Grand Prix': 2,
-    'Australian Grand Prix': 3,
-    'Japanese Grand Prix': 3,
-    'Chinese Grand Prix': 3,
-    'Miami Grand Prix': 2,
-    'Emilia Romagna Grand Prix': 4,
-    'Monaco Grand Prix': 5,
-    'Canadian Grand Prix': 3,
-    'Spanish Grand Prix': 4,
-    'Austrian Grand Prix': 2,
-    'British Grand Prix': 3,
-    'Hungarian Grand Prix': 4,
-    'Belgian Grand Prix': 2,
-    'Dutch Grand Prix': 4,
-    'Italian Grand Prix': 2,
-    'Azerbaijan Grand Prix': 3,
-    'Singapore Grand Prix': 5,
-    'United States Grand Prix': 3,
-    'Mexican Grand Prix': 3,
-    'Brazilian Grand Prix': 2,
-    'Las Vegas Grand Prix': 3,
-    'Qatar Grand Prix': 2,
-    'Abu Dhabi Grand Prix': 3,
-}
-=======
 
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
     """Return average overtake counts mapped by circuit name."""
@@ -185,7 +156,6 @@ def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
 
 # Average overtakes per circuit used for model training
 OVERTAKE_AVERAGES = _load_overtake_stats()
->>>>>>> origin/codex/estimate-overtakes-using-fastf1
 
 # List of grand prix for selection (2024 schedule approximation)
 GRAND_PRIX_LIST = [
@@ -216,13 +186,9 @@ GRAND_PRIX_LIST = [
 ]
 
 
-<<<<<<< HEAD
-def _load_historical_data(seasons):
-=======
 def _load_historical_data(seasons, overtake_map=None):
     if overtake_map is None:
         overtake_map = OVERTAKE_AVERAGES
->>>>>>> origin/codex/estimate-overtakes-using-fastf1
     race_data = []
     for season in seasons:
         for rnd in range(1, 23):
@@ -247,15 +213,9 @@ def _load_historical_data(seasons, overtake_map=None):
                     results['TrackTemp'] = np.nan
                     results['Rainfall'] = np.nan
 
-<<<<<<< HEAD
-                # Overtake difficulty
-                results['OvertakingDifficulty'] = OVERTAKE_DIFFICULTY.get(
-                    results['Circuit'].iloc[0], 3
-=======
                 # Average overtake count for this circuit
                 results['AverageOvertakes'] = overtake_map.get(
                     results['Circuit'].iloc[0], np.nan
->>>>>>> origin/codex/estimate-overtakes-using-fastf1
                 )
 
                 # Qualifying data
