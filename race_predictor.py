@@ -569,6 +569,21 @@ def _engineer_features(full_data):
         .rank(method='dense', ascending=False)
     )
 
+    # Previous season constructor ranking to provide baseline team strength
+    prev_year_map = {}
+    for yr in sorted(full_data['Season'].unique()):
+        prev = full_data[full_data['Season'] == yr - 1]
+        if prev.empty:
+            continue
+        final_pts = prev.groupby('HistoricalTeam')['ConstructorChampPoints'].max()
+        rank = final_pts.rank(method='dense', ascending=False)
+        prev_year_map[yr] = rank.to_dict()
+    full_data['PrevYearConstructorRank'] = full_data.apply(
+        lambda r: prev_year_map.get(r['Season'], {}).get(r['HistoricalTeam'], np.nan),
+        axis=1
+    )
+
+
     # Circuit metadata from FastF1
     try:
         from fastf1.circuit_info import get_circuit_info
@@ -646,6 +661,9 @@ def _engineer_features(full_data):
     full_data['ConstructorChampPoints'] = full_data['ConstructorChampPoints'].fillna(0)
     full_data['DriverStanding'] = full_data['DriverStanding'].fillna(full_data['DriverStanding'].max())
     full_data['ConstructorStanding'] = full_data['ConstructorStanding'].fillna(full_data['ConstructorStanding'].max())
+    full_data['PrevYearConstructorRank'] = full_data['PrevYearConstructorRank'].fillna(
+        full_data['PrevYearConstructorRank'].max()
+    )
 
     return full_data
 
@@ -941,7 +959,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability',
         'DriverChampPoints', 'ConstructorChampPoints',
-        'DriverStanding', 'ConstructorStanding',
+        'DriverStanding', 'ConstructorStanding', 'PrevYearConstructorRank',
         'CircuitLength', 'IsStreet', 'DownforceLevel',
         'AirTemp', 'TrackTemp', 'Rainfall', 'WeightedAvgOvertakes'
     ]
@@ -1112,6 +1130,16 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     else:
         team_strength = {}
 
+    prev_year = year - 1
+    prev_data = race_data[race_data['Season'] == prev_year]
+    if not prev_data.empty:
+        final_pts = prev_data.groupby('HistoricalTeam')['ConstructorChampPoints'].max()
+        prev_rank = final_pts.rank(method='dense', ascending=False)
+        prev_rank_map = prev_rank.to_dict()
+        default_prev_rank = int(prev_rank.max())
+    else:
+        prev_rank_map = {}
+        default_prev_rank = 0
 
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results['BestTime'].min()
@@ -1244,6 +1272,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'ConstructorChampPoints': constructor_pts_map.get(d['Team'], 0.0),
             'DriverStanding': int(driver_stand_map.get(d['DriverNumber'], 0)),
             'ConstructorStanding': int(constructor_stand_map.get(d['Team'], 0)),
+            'PrevYearConstructorRank': prev_rank_map.get(team_name, default_prev_rank),
             'CircuitLength': circuit_length_val,
             'IsStreet': is_street_val,
             'DownforceLevel': downforce_level_val,
