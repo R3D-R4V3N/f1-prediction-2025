@@ -10,6 +10,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 - **Live weather forecasts** blended with historical averages when an `OPENWEATHER_API_KEY` is provided.
 - **Historical performance metrics** like driver experience, recent form and track specific results.
 - **Sprint form** including finishing positions from sprint races when applicable.
+- **Team tier categories** derived from the previous season's constructor points.
 - **Streamlit web interface** to quickly run predictions for any Grand Prix.
 - **Data export utilities** to save FP3, qualifying, sprint and race session information.
 - **Rank-based metrics** showing podium accuracy and Spearman correlation.
