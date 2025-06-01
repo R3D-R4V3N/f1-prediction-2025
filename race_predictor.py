@@ -152,8 +152,23 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
 
     round_number = int(match.iloc[0]["RoundNumber"])
     df = _fetch_session_data(year, round_number, "FP3")
-    df = df.rename(columns={"Driver": "Abbreviation", "BestTime": "FP3BestTime"})
-    return df[["Abbreviation", "FP3BestTime", "AvgAirTemp", "AvgTrackTemp", "MaxRainfall"]]
+    df = df.rename(
+        columns={
+            "Driver": "Abbreviation",
+            "BestTime": "FP3BestTime",
+            "LongRunTime": "FP3LongRunTime",
+        }
+    )
+    return df[
+        [
+            "Abbreviation",
+            "FP3BestTime",
+            "FP3LongRunTime",
+            "AvgAirTemp",
+            "AvgTrackTemp",
+            "MaxRainfall",
+        ]
+    ]
 
 
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
@@ -312,7 +327,7 @@ def _load_historical_data(seasons, overtake_map=None):
                     results['BestQualiTime'] = np.nan
                     results['QualiPosition'] = np.nan
 
-                # FP3 best lap
+                # FP3 best lap and long run pace
                 try:
                     fp3_session = fastf1.get_session(season, rnd, 'FP3')
                     fp3_session.load()
@@ -324,9 +339,25 @@ def _load_historical_data(seasons, overtake_map=None):
                         .reset_index()
                         .rename(columns={'LapTime': 'FP3BestTime'})
                     )
+
+                    laps = fp3_session.laps
+                    if not laps.empty:
+                        max_lap = laps['LapNumber'].max()
+                        long_runs = laps[laps['LapNumber'] >= max_lap - 4]
+                        long_avg = (
+                            long_runs.groupby('DriverNumber')['LapTime']
+                            .apply(lambda s: s.dt.total_seconds().mean())
+                            .reset_index()
+                            .rename(columns={'LapTime': 'FP3LongRunTime'})
+                        )
+                        best_laps = best_laps.merge(long_avg, on='DriverNumber', how='left')
+                    else:
+                        best_laps['FP3LongRunTime'] = np.nan
+
                     results = pd.merge(results, best_laps, on='DriverNumber', how='left')
                 except Exception:
                     results['FP3BestTime'] = np.nan
+                    results['FP3LongRunTime'] = np.nan
 
                 race_data.append(results)
             except Exception:
@@ -373,6 +404,7 @@ def _engineer_features(full_data):
     full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
     full_data['QualiPosition'] = pd.to_numeric(full_data.get('QualiPosition'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
+    full_data['FP3LongRunTime'] = pd.to_numeric(full_data.get('FP3LongRunTime'), errors='coerce')
     if 'GridDropCount' in full_data.columns:
         full_data['GridDropCount'] = pd.to_numeric(full_data['GridDropCount'], errors='coerce').fillna(0)
     else:
@@ -567,6 +599,7 @@ def _engineer_features(full_data):
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
+    full_data['FP3LongRunTime'] = full_data['FP3LongRunTime'].fillna(full_data['FP3LongRunTime'].mean())
     full_data['IsStreet'] = full_data['IsStreet'].fillna(0)
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
@@ -874,7 +907,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     race_cols = [
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
         'RecentAvgPosition', 'RecentAvgPoints', 'BestQualiTime',
-        'QualiPosition', 'FP3BestTime', 'DeltaToBestQuali',
+        'QualiPosition', 'FP3BestTime', 'FP3LongRunTime', 'DeltaToBestQuali',
         'DeltaToNext',
         'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
@@ -965,11 +998,13 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         default_track = fp3_results['AvgTrackTemp'].mean()
         default_rain = fp3_results['MaxRainfall'].max()
         default_fp3 = fp3_results['FP3BestTime'].mean()
+        default_fp3_long = fp3_results['FP3LongRunTime'].mean()
     else:
         default_air = race_data['AirTemp'].mean()
         default_track = race_data['TrackTemp'].mean()
         default_rain = race_data['Rainfall'].median()
         default_fp3 = race_data['FP3BestTime'].mean()
+        default_fp3_long = race_data['FP3LongRunTime'].mean()
     default_overtake = race_data['AverageOvertakes'].mean()
 
     # Determine the round number for the target event so season-based
@@ -1130,6 +1165,11 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         else:
             fp3_time = default_fp3
 
+        if fp3_results is not None and 'FP3LongRunTime' in d and pd.notna(d['FP3LongRunTime']):
+            fp3_long_time = d['FP3LongRunTime']
+        else:
+            fp3_long_time = default_fp3_long
+
         driver_num = int(d['DriverNumber'])
         same_season = race_data[
             (race_data['DriverNumber'] == driver_num) &
@@ -1157,6 +1197,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'BestQualiTime': best_time,
             'QualiPosition': grid_pos,
             'FP3BestTime': fp3_time,
+            'FP3LongRunTime': fp3_long_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
             'DeltaToNext': d.get('DeltaToNext', default_delta_next),
             'Recent3AvgFinish': recent3_avg,
@@ -1207,6 +1248,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     pred_df['FP3BestTime'] = (
         pd.to_numeric(pred_df['FP3BestTime'], errors='coerce')
         .fillna(race_data['FP3BestTime'].mean())
+    )
+    pred_df['FP3LongRunTime'] = (
+        pd.to_numeric(pred_df['FP3LongRunTime'], errors='coerce')
+        .fillna(race_data['FP3LongRunTime'].mean())
     )
 
     # Save the driver list so the raw input fed to the model can be inspected.
