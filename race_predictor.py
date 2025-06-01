@@ -298,7 +298,7 @@ def fetch_weather(circuit: str, api_key: str | None = None) -> dict | None:
         Dictionary with ``ForecastAirTemp`` and ``ForecastPrecipChance`` or
         ``None`` if the request fails.
     """
-    api_key = api_key or os.getenv("OPENWEATHER_API_KEY")
+    api_key = api_key or os.getenv("d2bc9fb8d94c258d06149c087ccd4892")
     coords = CIRCUIT_COORDS.get(circuit)
     if not api_key or not coords:
         return None
