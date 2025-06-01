@@ -1022,6 +1022,16 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         driver_stand_map = {}
         constructor_stand_map = {}
 
+    same_season_teams = race_data[race_data['Season'] == year]
+    if not same_season_teams.empty:
+        team_strength = (
+            same_season_teams.groupby('HistoricalTeam')['Position']
+            .mean()
+            .to_dict()
+        )
+    else:
+        team_strength = {}
+
 
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results['BestTime'].min()
@@ -1055,7 +1065,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         if len(team_prev) > 0:
             team_avg_pos = team_prev['Position'].mean()
         else:
-            team_avg_pos = default_team_avg
+            team_avg_pos = team_strength.get(team_name, default_team_avg)
 
         team_prev_q = team_prev['QualiPosition']
         if len(team_prev_q) > 0:
