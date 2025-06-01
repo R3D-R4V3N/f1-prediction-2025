@@ -1113,6 +1113,15 @@ def _train_model(features, target, cv, debug=False):
 
 
 def predict_race(grand_prix, year=2025, export_details=False, debug=False, compute_overtakes=True):
+    # Determine the round number up front so that training data for the current
+    # season can be trimmed to only completed events. This avoids leaking
+    # information from future rounds into season-to-date features.
+    schedule = fastf1.get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
+    this_race_number = int(match.iloc[0]["RoundNumber"])
+
     # Include the target ``year`` in the loaded dataset so any completed races
     # from the ongoing season contribute to championship standings.
     seasons = list(range(2020, year + 1))
@@ -1138,6 +1147,12 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # historical information. ``_prepare_features`` will internally use the
     # ``HistoricalTeam`` column for encoding.
     race_data = race_data.drop(columns=['Team'], errors='ignore')
+    # Drop any rows from the prediction season that occur on or after the target
+    # event. This keeps rolling aggregates and championship points strictly
+    # limited to completed rounds.
+    race_data = race_data.loc[
+        ~((race_data['Season'] == year) & (race_data['RaceNumber'] >= this_race_number))
+    ].reset_index(drop=True)
     race_data = _engineer_features(race_data)
     # Ensure strict chronological order before creating the feature matrix.
     race_data.sort_values(["Season", "RaceNumber"], inplace=True)
@@ -1263,13 +1278,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             default_rain = hist_rain
     default_overtake = race_data['WeightedAvgOvertakes'].mean()
 
-    # Determine the round number for the target event so season-based
-    # rolling features can mirror the training logic.
-    schedule = fastf1.get_event_schedule(year)
-    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
-    if match.empty:
-        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
-    this_race_number = int(match.iloc[0]["RoundNumber"])
+    # ``this_race_number`` was determined earlier so historical data could be
+    # filtered accordingly.
 
     try:
         from fastf1.circuit_info import get_circuit_info
