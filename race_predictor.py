@@ -548,6 +548,7 @@ def predict_race(grand_prix, year=2025, export_details=False):
     # Ensure DriverNumber is numeric for consistent merging
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
     qual_results = None
+    fp3_results = None
     try:
         drivers_df = _get_qualifying_results(year, grand_prix)
         drivers_df = drivers_df[drivers_df['BestTime'].notna()]
@@ -625,6 +626,15 @@ def predict_race(grand_prix, year=2025, export_details=False):
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
     features = race_feats_with_pred
 
+    # Retrieve FP3 results now so default values include real session data if
+    # available.
+    try:
+        fp3_results = _get_fp3_results(year, grand_prix)
+        if qual_results is not None:
+            qual_results = qual_results.merge(fp3_results, on='Abbreviation', how='left')
+    except Exception:
+        fp3_results = None
+
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results['BestTime'].mean()
         default_qpos = qual_results['GridPosition'].mean()
@@ -689,12 +699,13 @@ def predict_race(grand_prix, year=2025, export_details=False):
         except Exception:
             qual_results = None
 
-    try:
-        fp3_results = _get_fp3_results(year, grand_prix)
-        if qual_results is not None:
-            qual_results = qual_results.merge(fp3_results, on='Abbreviation', how='left')
-    except Exception:
-        fp3_results = None
+    if fp3_results is None:
+        try:
+            fp3_results = _get_fp3_results(year, grand_prix)
+            if qual_results is not None:
+                qual_results = qual_results.merge(fp3_results, on='Abbreviation', how='left')
+        except Exception:
+            fp3_results = None
 
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
     for _, d in driver_iter.iterrows():
