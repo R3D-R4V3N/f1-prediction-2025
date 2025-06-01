@@ -525,10 +525,13 @@ def _engineer_features(full_data):
     df_level_map = {'low': 0, 'medium': 1, 'high': 2}
     full_data['DownforceLevel'] = full_data['Downforce'].map(df_level_map)
 
-    team_perf = full_data.groupby(['HistoricalTeam', 'Season'])['Position'].mean().reset_index()
-    team_perf = team_perf.rename(columns={'Position': 'TeamAvgPosition'})
-    full_data = pd.merge(full_data, team_perf, on=['HistoricalTeam', 'Season'], how='left')
-    full_data['TeamAvgPosition'] = full_data['TeamAvgPosition'].fillna(full_data['TeamAvgPosition'].mean())
+    full_data['TeamAvgPosition'] = (
+        full_data.groupby(['HistoricalTeam', 'Season'])['Position']
+        .apply(lambda s: s.shift().expanding().mean())
+        .reset_index(level=[0, 1], drop=True)
+    )
+    full_data['TeamAvgPosition'] = full_data['TeamAvgPosition'].fillna(
+        full_data['TeamAvgPosition'].mean())
 
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
