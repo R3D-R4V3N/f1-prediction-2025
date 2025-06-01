@@ -799,7 +799,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     else:
         default_air = race_data['AirTemp'].mean()
         default_track = race_data['TrackTemp'].mean()
-        default_rain = 0.0
+        default_rain = race_data['Rainfall'].median()
         default_fp3 = race_data['FP3BestTime'].mean()
     default_overtake = race_data['AverageOvertakes'].mean()
 
