@@ -25,7 +25,7 @@ def export_full_season(year: int = 2025, output_file: str = "prediction_data_rac
                 df['EventName'] = gp
                 data_frames.append(df)
             except Exception as err:
-                print(f"Failed to load {year} {gp} {code}: {err}")
+                print(f"⚠️ Failed to load {year} {gp} {code}: {err}")
 
     if not data_frames:
         raise RuntimeError("No data collected for season")
@@ -36,4 +36,4 @@ def export_full_season(year: int = 2025, output_file: str = "prediction_data_rac
 
 if __name__ == "__main__":
     path = export_full_season()
-    print(f"Saved full season data to {path}")
+    print(f"✅ Saved full season data to {path}")
