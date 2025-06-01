@@ -5,7 +5,7 @@ from warnings import filterwarnings
 
 from fastf1 import Cache, get_event_schedule, get_session
 import requests
-from numpy import nan, mean, max, where
+from numpy import nan, mean, where
 import pandas as pd
 from pandas import DataFrame, Series, to_numeric, to_timedelta, read_csv
 from sklearn.preprocessing import OneHotEncoder
@@ -458,9 +458,18 @@ def _engineer_features(full_data):
         full_data.get('Points', pd.Series(nan, index=full_data.index)),
         errors='coerce'
     ).fillna(0)
-    full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
-    full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
-    full_data['FP3LongRunTime'] = pd.to_numeric(full_data.get('FP3LongRunTime'), errors='coerce')
+    full_data['BestQualiTime'] = pd.to_timedelta(
+        full_data.get('BestQualiTime', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
+    ).dt.total_seconds()
+    full_data['FP3BestTime'] = pd.to_timedelta(
+        full_data.get('FP3BestTime', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
+    ).dt.total_seconds()
+    full_data['FP3LongRunTime'] = pd.to_timedelta(
+        full_data.get('FP3LongRunTime', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
+    ).dt.total_seconds()
     full_data['SprintFinish'] = pd.to_numeric(
         full_data.get('SprintFinish', pd.Series(nan, index=full_data.index)),
         errors='coerce'
