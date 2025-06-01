@@ -217,6 +217,10 @@ def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["DriverNumber"].notna()]
     df["Position"] = pd.to_numeric(df["Position"], errors="coerce")
     df["GridPosition"] = pd.to_numeric(df["GridPosition"], errors="coerce")
+    if "Status" in df.columns:
+        df["DidNotFinish"] = df["Status"].str.lower() != "finished"
+    else:
+        df["DidNotFinish"] = df["Position"] > 20
     df["Position"] = df["Position"].clip(1, 20)
     df["GridPosition"] = df["GridPosition"].clip(1, 20)
     return df
@@ -243,10 +247,7 @@ def _load_historical_data(seasons, overtake_map=None):
                 session = fastf1.get_session(season, rnd, 'R')
                 session.load()
 
-                result_cols = ['DriverNumber', 'Position', 'Points', 'GridPosition']
-                if 'Status' in session.results.columns:
-                    result_cols.append('Status')
-                results = session.results[result_cols]
+                results = session.results[['DriverNumber', 'Position', 'Points', 'GridPosition', 'Status']]
                 results['Season'] = season
                 results['RaceNumber'] = rnd
                 results['Circuit'] = session.event['EventName']
@@ -378,11 +379,12 @@ def _engineer_features(full_data):
     if 'Q3Time' in full_data.columns:
         full_data['Q3Time'] = pd.to_numeric(full_data['Q3Time'], errors='coerce')
 
-    # Determine DNFs using status information when available
-    if 'Status' in full_data.columns:
-        full_data['DidNotFinish'] = ~full_data['Status'].str.lower().str.contains('finished')
-    else:
-        full_data['DidNotFinish'] = full_data['Position'] > 20
+    # Determine DNFs if not already provided
+    if 'DidNotFinish' not in full_data.columns:
+        if 'Status' in full_data.columns:
+            full_data['DidNotFinish'] = full_data['Status'].str.lower() != 'finished'
+        else:
+            full_data['DidNotFinish'] = full_data['Position'] > 20
 
     # Delta to fastest qualifier in the event
     if 'BestQualiTime' in full_data.columns:
