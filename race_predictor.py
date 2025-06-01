@@ -484,33 +484,33 @@ def _engineer_features(full_data):
     else:
         full_data['QualiSessionGain'] = np.nan
 
-    full_data.sort_values(['Season', 'RaceNumber'], inplace=True)
+    full_data.sort_values(['DriverNumber', 'Season', 'RaceNumber'], inplace=True)
     full_data['ExperienceCount'] = full_data.groupby('DriverNumber').cumcount() + 1
     full_data['RaceIdxInSeason'] = (
         full_data.groupby(['Season', 'DriverNumber']).cumcount() + 1
     )
-    full_data['RecentAvgPosition'] = (
-        full_data.groupby(['DriverNumber', 'Season'])['Position']
+    full_data['CrossAvgFinish'] = (
+        full_data.groupby('DriverNumber')['Position']
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
-        .reset_index(level=[0, 1], drop=True)
+        .reset_index(level=0, drop=True)
     )
-    full_data['RecentAvgPosition'] = full_data['RecentAvgPosition'].fillna(full_data['Position'].mean())
+    full_data['CrossAvgFinish'] = full_data['CrossAvgFinish'].fillna(full_data['Position'].mean())
     full_data['Recent3AvgFinish'] = (
-        full_data.groupby(['DriverNumber', 'Season'])['Position']
+        full_data.groupby('DriverNumber')['Position']
         .apply(lambda s: s.shift().rolling(window=3, min_periods=1).mean())
-        .reset_index(level=[0, 1], drop=True)
+        .reset_index(level=0, drop=True)
     )
     full_data['Recent3AvgFinish'] = full_data['Recent3AvgFinish'].fillna(full_data['Position'].mean())
     full_data['Recent5AvgFinish'] = (
-        full_data.groupby(['DriverNumber', 'Season'])['Position']
+        full_data.groupby('DriverNumber')['Position']
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
-        .reset_index(level=[0, 1], drop=True)
+        .reset_index(level=0, drop=True)
     )
     full_data['Recent5AvgFinish'] = full_data['Recent5AvgFinish'].fillna(full_data['Position'].mean())
     full_data['RecentAvgPoints'] = (
-        full_data.groupby(['DriverNumber', 'Season'])['Points']
+        full_data.groupby('DriverNumber')['Points']
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).mean())
-        .reset_index(level=[0, 1], drop=True)
+        .reset_index(level=0, drop=True)
     )
     full_data['RecentAvgPoints'] = full_data['RecentAvgPoints'].fillna(0)
 
@@ -928,7 +928,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Feature sets
     race_cols = [
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
-        'RecentAvgPosition', 'RecentAvgPoints', 'BestQualiTime',
+        'CrossAvgFinish', 'RecentAvgPoints', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'FP3LongRunTime', 'DeltaToBestQuali',
         'DeltaToNext', 'SprintFinish',
         'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
@@ -1193,28 +1193,29 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             fp3_long_time = default_fp3_long
 
         driver_num = int(d['DriverNumber'])
-        same_season = race_data[
-            (race_data['DriverNumber'] == driver_num) &
-            (race_data['Season'] == year)
-        ].sort_values('RaceNumber')
-        prev_races = same_season[same_season['RaceNumber'] < this_race_number]
+        past_races = race_data[
+            (race_data['DriverNumber'] == driver_num) & (
+                (race_data['Season'] < year) |
+                ((race_data['Season'] == year) & (race_data['RaceNumber'] < this_race_number))
+            )
+        ].sort_values(['Season', 'RaceNumber'])
 
-        if prev_races.empty:
-            recent_avg_pos = overall_avg_pos
+        if past_races.empty:
+            cross_avg = overall_avg_pos
             recent_avg_pts = 0.0
             recent3_avg = overall_avg_pos
             recent5_avg = overall_avg_pos
         else:
-            recent_avg_pos = prev_races['Position'].tail(5).mean()
-            recent_avg_pts = prev_races['Points'].tail(5).mean()
-            recent3_avg = prev_races['Position'].tail(3).mean()
-            recent5_avg = prev_races['Position'].tail(5).mean()
+            cross_avg = past_races['Position'].tail(5).mean()
+            recent_avg_pts = past_races['Points'].tail(5).mean()
+            recent3_avg = past_races['Position'].tail(3).mean()
+            recent5_avg = past_races['Position'].tail(5).mean()
         pred_rows.append({
             'GridPosition': grid_pos,
             'Season': year,
             'ExperienceCount': exp_count,
             'TeamAvgPosition': team_avg_pos,
-            'RecentAvgPosition': recent_avg_pos,
+            'CrossAvgFinish': cross_avg,
             'RecentAvgPoints': recent_avg_pts,
             'BestQualiTime': best_time,
             'QualiPosition': grid_pos,
