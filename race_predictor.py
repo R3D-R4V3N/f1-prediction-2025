@@ -149,16 +149,13 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
     return df[["Abbreviation", "FP3BestTime", "AvgAirTemp", "AvgTrackTemp", "MaxRainfall"]]
 
 
-def _load_overtake_difficulty(path: str = "overtake_stats.csv") -> dict:
-    """Read historical overtaking statistics and convert to difficulty levels."""
+def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
+    """Return average overtake counts mapped by circuit name."""
     df = pd.read_csv(path)
-    df["Difficulty"] = pd.qcut(
-        df["AverageOvertakes"], q=5, labels=[5, 4, 3, 2, 1]
-    ).astype(int)
-    return df.set_index("Circuit")["Difficulty"].to_dict()
+    return df.set_index("Circuit")["AverageOvertakes"].to_dict()
 
-# Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
-OVERTAKE_DIFFICULTY = _load_overtake_difficulty()
+# Average overtakes per circuit used for model training
+OVERTAKE_AVERAGES = _load_overtake_stats()
 
 # List of grand prix for selection (2024 schedule approximation)
 GRAND_PRIX_LIST = [
@@ -191,7 +188,7 @@ GRAND_PRIX_LIST = [
 
 def _load_historical_data(seasons, overtake_map=None):
     if overtake_map is None:
-        overtake_map = OVERTAKE_DIFFICULTY
+        overtake_map = OVERTAKE_AVERAGES
     race_data = []
     for season in seasons:
         for rnd in range(1, 23):
@@ -216,9 +213,9 @@ def _load_historical_data(seasons, overtake_map=None):
                     results['TrackTemp'] = np.nan
                     results['Rainfall'] = np.nan
 
-                # Overtake difficulty
-                results['OvertakingDifficulty'] = overtake_map.get(
-                    results['Circuit'].iloc[0], 3
+                # Average overtake count for this circuit
+                results['AverageOvertakes'] = overtake_map.get(
+                    results['Circuit'].iloc[0], np.nan
                 )
 
                 # Qualifying data
@@ -310,7 +307,7 @@ def _engineer_features(full_data):
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
-    full_data['OvertakingDifficulty'] = pd.to_numeric(full_data.get('OvertakingDifficulty'), errors='coerce')
+    full_data['AverageOvertakes'] = pd.to_numeric(full_data.get('AverageOvertakes'), errors='coerce')
     full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
     full_data['QualiPosition'] = pd.to_numeric(full_data.get('QualiPosition'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
@@ -439,7 +436,7 @@ def _engineer_features(full_data):
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
     full_data['Rainfall'] = full_data['Rainfall'].fillna(0)
-    full_data['OvertakingDifficulty'] = full_data['OvertakingDifficulty'].fillna(3)
+    full_data['AverageOvertakes'] = full_data['AverageOvertakes'].fillna(full_data['AverageOvertakes'].mean())
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
@@ -641,7 +638,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
     race_cols = [
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
         'RecentAvgPosition', 'RecentAvgPoints', 'AirTemp', 'TrackTemp',
-        'Rainfall', 'OvertakingDifficulty', 'BestQualiTime',
+        'Rainfall', 'AverageOvertakes', 'BestQualiTime',
         'QualiPosition', 'FP3BestTime', 'DeltaToBestQuali',
         'DeltaToTeammateQuali', 'DeltaToTeammateFinish',
         'GridDropCount', 'QualiSessionGain', 'Recent3AvgFinish',
@@ -653,7 +650,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
     quali_cols = [
         'Season', 'ExperienceCount', 'TeamAvgPosition', 'RecentAvgPosition',
         'RecentAvgPoints', 'AirTemp', 'TrackTemp', 'Rainfall',
-        'OvertakingDifficulty', 'BestQualiTime', 'FP3BestTime',
+        'AverageOvertakes', 'BestQualiTime', 'FP3BestTime',
         'DeltaToBestQuali', 'DeltaToTeammateQuali', 'GridDropCount',
         'QualiSessionGain', 'TeamRecentQuali', 'IsStreet',
         'DownforceLevel'
@@ -713,7 +710,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
         default_track = race_data['TrackTemp'].mean()
         default_rain = 0.0
         default_fp3 = race_data['FP3BestTime'].mean()
-    default_overtake = 3
+    default_overtake = race_data['AverageOvertakes'].mean()
 
     # Prepare prediction dataframe for all drivers
     pred_rows = []
@@ -837,7 +834,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
             'AirTemp': default_air,
             'TrackTemp': default_track,
             'Rainfall': default_rain,
-            'OvertakingDifficulty': default_overtake,
+            'AverageOvertakes': default_overtake,
             'BestQualiTime': best_time,
             'QualiPosition': grid_pos,
             'FP3BestTime': fp3_time,
