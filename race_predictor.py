@@ -968,7 +968,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             grid_pos = int(d['GridPosition'])
             best_time = d['BestTime']
         else:
-            grid_pos = np.nan
+            # Use the same defaults as the training data when qualifying
+            # information is missing so the model sees a consistent
+            # distribution during training and prediction.
+            grid_pos = 25
             best_time = default_best_q
 
         if fp3_results is not None and 'FP3BestTime' in d and pd.notna(d['FP3BestTime']):
@@ -1021,6 +1024,26 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     if pred_df.empty:
         raise ValueError(f"No driver data available for {year} {grand_prix}")
+
+    # Fill missing qualifying-related columns using the same defaults
+    # as the historical training data so feature scaling remains
+    # consistent between training and prediction phases.
+    pred_df['GridPosition'] = (
+        pd.to_numeric(pred_df['GridPosition'], errors='coerce')
+        .fillna(25)
+    )
+    pred_df['QualiPosition'] = (
+        pd.to_numeric(pred_df['QualiPosition'], errors='coerce')
+        .fillna(20)
+    )
+    pred_df['BestQualiTime'] = (
+        pd.to_numeric(pred_df['BestQualiTime'], errors='coerce')
+        .fillna(race_data['BestQualiTime'].mean())
+    )
+    pred_df['FP3BestTime'] = (
+        pd.to_numeric(pred_df['FP3BestTime'], errors='coerce')
+        .fillna(race_data['FP3BestTime'].mean())
+    )
 
     # Save the driver list so the raw input fed to the model can be inspected.
     pred_df.to_csv("prediction_input.csv", index=False)
