@@ -884,6 +884,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         qual_results['GridDropCount'] = 0
 
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
+    overall_avg_pos = race_data['Position'].mean()
     for _, d in driver_iter.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
         if exp_count == 0:
@@ -923,13 +924,27 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             fp3_time = d['FP3BestTime']
         else:
             fp3_time = default_fp3
+
+        hist = race_data[race_data['DriverNumber'] == d['DriverNumber']].sort_values(['Season', 'RaceNumber'])
+        last5 = hist.tail(5)
+        last3 = hist.tail(3)
+        if hist.empty:
+            recent_avg_pos = overall_avg_pos
+            recent_avg_pts = 0.0
+            recent3_avg = overall_avg_pos
+            recent5_avg = overall_avg_pos
+        else:
+            recent_avg_pos = last5['Position'].mean()
+            recent_avg_pts = last5['Points'].mean()
+            recent3_avg = last3['Position'].mean()
+            recent5_avg = last5['Position'].mean()
         pred_rows.append({
             'GridPosition': grid_pos,
             'Season': year,
             'ExperienceCount': exp_count,
             'TeamAvgPosition': team_avg_pos,
-            'RecentAvgPosition': 10.0,
-            'RecentAvgPoints': 0.0,
+            'RecentAvgPosition': recent_avg_pos,
+            'RecentAvgPoints': recent_avg_pts,
             'AirTemp': default_air,
             'TrackTemp': default_track,
             'Rainfall': default_rain,
@@ -941,8 +956,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             'DeltaToTeammateQuali': d.get('DeltaToTeammateQuali', 0),
             'GridDropCount': d.get('GridDropCount', 0),
             'QualiSessionGain': d.get('QualiSessionGain', 0),
-            'Recent3AvgFinish': 10.0,
-            'Recent5AvgFinish': 10.0,
+            'Recent3AvgFinish': recent3_avg,
+            'Recent5AvgFinish': recent5_avg,
             'DriverAvgTrackFinish': avg_track,
             'DriverTrackPodiums': podiums,
             'DriverTrackDNFs': dnfs,
