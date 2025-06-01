@@ -1,4 +1,5 @@
 import os
+import logging
 import pandas as pd
 
 try:
@@ -7,6 +8,8 @@ except ImportError as exc:
     raise SystemExit("fastf1 is required to run this script. Install via 'pip install fastf1'.") from exc
 
 from export_race_details import _fetch_session_data
+
+logger = logging.getLogger(__name__)
 
 def export_full_season(year: int = 2025, output_file: str = "prediction_data_race_2025.csv") -> str:
     """Collect FP3, qualifying and race data for all events in a season."""
@@ -25,7 +28,9 @@ def export_full_season(year: int = 2025, output_file: str = "prediction_data_rac
                 df['EventName'] = gp
                 data_frames.append(df)
             except Exception as err:
-                print(f"⚠️ Failed to load {year} {gp} {code}: {err}")
+                logger.warning(
+                    "Failed to load %d %s %s: %s", year, gp, code, err
+                )
 
     if not data_frames:
         raise RuntimeError("No data collected for season")
@@ -36,4 +41,4 @@ def export_full_season(year: int = 2025, output_file: str = "prediction_data_rac
 
 if __name__ == "__main__":
     path = export_full_season()
-    print(f"✅ Saved full season data to {path}")
+    logger.info("Saved full season data to %s", path)

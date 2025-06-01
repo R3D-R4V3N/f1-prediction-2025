@@ -1,5 +1,6 @@
 import os
 import warnings
+import logging
 
 import fastf1
 import requests
@@ -8,6 +9,8 @@ import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
 from export_race_details import _fetch_session_data
+
+logger = logging.getLogger(__name__)
 
 warnings.filterwarnings('ignore')
 
@@ -254,7 +257,7 @@ def fetch_weather(circuit: str, api_key: str | None = None) -> dict | None:
             rain = float(np.max(pops)) if pops else 0.0
             return {"ForecastAirTemp": air, "ForecastPrecipChance": rain}
     except Exception as err:  # pragma: no cover - network call
-        print(f"⚠️ Failed to fetch weather: {err}")
+        logger.warning("Failed to fetch weather: %s", err)
     return None
 
 

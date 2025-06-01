@@ -1,13 +1,18 @@
 import os
 import argparse
 import time
+import logging
 import pandas as pd
 import requests
 
 try:
     import fastf1
 except ImportError as exc:
-    raise SystemExit("fastf1 is required to run this script. Install via 'pip install fastf1'.") from exc
+    raise SystemExit(
+        "fastf1 is required to run this script. Install via 'pip install fastf1'."
+    ) from exc
+
+logger = logging.getLogger(__name__)
 
 
 def _fetch_session_data(
@@ -29,7 +34,7 @@ def _fetch_session_data(
             status = getattr(exc.response, "status_code", None)
             if status == 429 and attempt < retries:
                 wait_time = 2 ** attempt
-                print(f"⏳ Rate limit hit, retrying in {wait_time}s...")
+                logger.info("Rate limit hit, retrying in %ds...", wait_time)
                 time.sleep(wait_time)
                 attempt += 1
                 continue
@@ -156,7 +161,7 @@ def export_race_details(year: int, grand_prix: str) -> str:
                 'MaxRainfall': [None],
             })
             data_frames.append(fallback)
-            print(f"⚠️ Failed to load {code} session: {err}")
+            logger.warning("Failed to load %s session: %s", code, err)
 
     df = pd.concat(data_frames, ignore_index=True)
     out_dir = 'race_details'
@@ -164,18 +169,20 @@ def export_race_details(year: int, grand_prix: str) -> str:
     safe_name = event_name.lower().replace(' ', '_')
     file_path = os.path.join(out_dir, f"{year}_{safe_name}.csv")
     df.to_csv(file_path, index=False)
-    print(f"✅ Saved session data to {file_path}")
+    logger.info("Saved session data to %s", file_path)
     return file_path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Export race session weather data to CSV")
+    parser = argparse.ArgumentParser(
+        description="Export race session weather data to CSV"
+    )
     parser.add_argument('year', type=int, help='Season year (e.g. 2024)')
     parser.add_argument('grand_prix', help='Grand Prix name (e.g. "Monaco")')
     args = parser.parse_args()
 
     file_path = export_race_details(args.year, args.grand_prix)
-    print(f"✅ Saved session data to {file_path}")
+    logger.info("Saved session data to %s", file_path)
 
 
 if __name__ == '__main__':
