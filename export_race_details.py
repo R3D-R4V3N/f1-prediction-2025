@@ -1,6 +1,8 @@
 import os
 import argparse
+import time
 import pandas as pd
+import requests
 
 try:
     import fastf1
@@ -8,10 +10,30 @@ except ImportError as exc:
     raise SystemExit("fastf1 is required to run this script. Install via 'pip install fastf1'.") from exc
 
 
-def _fetch_session_data(year: int, round_number: int, session_code: str) -> pd.DataFrame:
-    """Load a session and return weather info plus driver lap/position data."""
-    session = fastf1.get_session(year, round_number, session_code)
-    session.load()
+def _fetch_session_data(
+    year: int, round_number: int, session_code: str, retries: int = 3
+) -> pd.DataFrame:
+    """Load a session and return weather info plus driver lap/position data.
+
+    The function retries when the underlying API responds with a 429 status
+    code. Exponential backoff is used between attempts.
+    """
+
+    attempt = 0
+    while True:
+        session = fastf1.get_session(year, round_number, session_code)
+        try:
+            session.load()
+            break
+        except requests.exceptions.HTTPError as exc:  # type: ignore[attr-defined]
+            status = getattr(exc.response, "status_code", None)
+            if status == 429 and attempt < retries:
+                wait_time = 2 ** attempt
+                print(f"Rate limit hit, retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                attempt += 1
+                continue
+            raise
 
     weather = session.weather_data
     avg_air = weather['AirTemp'].mean()
