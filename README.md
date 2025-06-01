@@ -8,6 +8,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 - **Automatic team and driver handling** for 2025 line‑ups, including rookies.
 - **Weather and circuit statistics** such as air/track temperature and estimated overtakes per circuit.
 - **Historical performance metrics** like driver experience, recent form and track specific results.
+- **Sprint form** including finishing positions from sprint races when applicable.
 - **Streamlit web interface** to quickly run predictions for any Grand Prix.
 - **Data export utilities** to save FP3, qualifying, sprint and race session information.
 - **Rank-based metrics** showing podium accuracy and Spearman correlation.
