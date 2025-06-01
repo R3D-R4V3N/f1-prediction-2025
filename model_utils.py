@@ -1,12 +1,37 @@
-import numpy as np
+from typing import Iterable
+import logging
+import os
+
+from numpy import mean, ndarray
 import pandas as pd
 from scipy.stats import spearmanr
 from xgboost import XGBRanker, plot_importance
 import matplotlib.pyplot as plt
 import optuna
+from sklearn.model_selection import train_test_split
+
+logger = logging.getLogger(__name__)
 
 
-def _rank_metrics(actual: pd.Series, preds: np.ndarray) -> dict:
+class SeasonSplit:
+    def __init__(self, seasons: Iterable[int]):
+        self.seasons = seasons
+
+    def split(self, X, y=None, groups=None):
+        for i in range(1, len(self.seasons)):
+            train_mask = X['Season'].isin(self.seasons[:i])
+            val_mask = X['Season'] == self.seasons[i]
+            yield (train_mask[train_mask].index.values, val_mask[val_mask].index.values)
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return len(self.seasons) - 1
+
+
+def build_group_list(df: pd.DataFrame) -> list:
+    return df.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
+
+
+def _rank_metrics(actual: pd.Series, preds: ndarray) -> dict:
     """Compute ranking-focused metrics."""
     actual_series = pd.Series(actual).reset_index(drop=True)
     pred_series = pd.Series(preds)
@@ -58,27 +83,54 @@ def _train_model(features, target, cv, debug=False):
             preds = model.predict(val_feat)
             rho = spearmanr(target.iloc[val_idx].reset_index(drop=True), preds).correlation
             scores.append(rho)
-        return np.mean(scores)
+        return mean(scores)
 
     study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=60, show_progress_bar=False)
     best_params = study.best_params
     best_score = study.best_value
+
+    X_full_train, X_dev, y_full_train, y_dev = train_test_split(
+        features, target, test_size=0.05, shuffle=False
+    )
+    group_full_train = build_group_list(X_full_train)
+    group_dev = build_group_list(X_dev)
+
     model = XGBRanker(objective="rank:pairwise", random_state=42, **best_params)
-    full_group = features.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
+    model.fit(
+        X_full_train,
+        y_full_train,
+        group=group_full_train,
+        eval_set=[(X_dev, y_dev)],
+        eval_group=[group_dev],
+        early_stopping_rounds=20,
+        verbose=False,
+    )
+    best_iter = model.best_iteration_
+
+    model = XGBRanker(
+        objective="rank:pairwise",
+        random_state=42,
+        **best_params,
+        n_estimators=best_iter,
+    )
     model.fit(
         features,
         target,
-        group=full_group,
-        eval_set=[(features, target)],
-        eval_group=[full_group],
+        group=build_group_list(features),
         verbose=False,
-        early_stopping_rounds=20,
     )
+
     if debug:
-        plot_importance(model, max_num_features=10)
-        plt.show()
+        plt.figure(figsize=(10, 8))
+        plot_importance(model, max_num_features=20)
+        plt.title("Top 20 Feature Importances")
+        plt.tight_layout()
+        os.makedirs("model_info", exist_ok=True)
+        plt.savefig("model_info/feature_importance.png")
+        plt.close()
+
     return model, best_score
 
 
-__all__ = ['_rank_metrics', '_train_model']
+__all__ = ['_rank_metrics', '_train_model', 'SeasonSplit', 'build_group_list']

@@ -1,8 +1,16 @@
+import logging
 import streamlit as st
 import pandas as pd
 import numpy as np
-from predictor import predict_race
+from pipeline import predict_race
 from data_utils import GRAND_PRIX_LIST
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 @st.cache_data(show_spinner=False)
@@ -45,6 +53,12 @@ if st.button('Predict Results'):
 
         st.subheader('Predicted Finishing Positions')
         st.dataframe(results[['Final_Position', 'Driver', 'Team', 'Grid']])
+
+        if st.checkbox('Show Feature Importance'):
+            try:
+                st.image('model_info/feature_importance.png')
+            except Exception:
+                st.info('Feature importance plot not available')
 
         if debug_mode:
             actual = _load_actual_results(year, gp)
