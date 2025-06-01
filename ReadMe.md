@@ -6,7 +6,7 @@ This project predicts Formula 1 race results for the 2025 season using historica
 
 ## Project Overview
 
-This project uses historical Formula 1 data from the 2022-2024 seasons to build a predictive model for 2025 races. The model incorporates:
+This project uses historical Formula 1 data from the 2020-2025 seasons to build a predictive model for 2025 races. The model incorporates:
 
 - Historical driver performance
 - Team strength assessment
@@ -65,7 +65,7 @@ This visualization shows:
 
 1. **Data Collection**
 
-   - Historical race results from 2022-2024 seasons
+   - Historical race results from 2020-2025 seasons
    - Driver and team mappings
    - Circuit-specific performance patterns
 
@@ -143,7 +143,7 @@ The model predicts a podium of:
 2. 🥈 Liam Lawson (Red Bull Racing)
 3. 🥉 George Russell (Mercedes)
 
-The full prediction includes expected finishing positions for all 20 drivers competing in a selected 2025 Grand Prix.
+The full prediction includes expected finishing positions for all drivers who set a qualifying time in the chosen Grand Prix. Drivers are listed by their three-letter abbreviations.
 
 ## Future Improvements
 
