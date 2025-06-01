@@ -885,11 +885,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
     for _, d in driver_iter.iterrows():
-        exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
-        if exp_count == 0:
-            exp_count = 1
-        else:
-            exp_count += 23
+        exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']]) + 1
         team_row = team_info[team_info['Team'] == d['Team']]
         if len(team_row) == 0:
             team_avg_pos = team_info['TeamAvgPosition'].mean()
