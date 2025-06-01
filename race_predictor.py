@@ -243,7 +243,10 @@ def _load_historical_data(seasons, overtake_map=None):
                 session = fastf1.get_session(season, rnd, 'R')
                 session.load()
 
-                results = session.results[['DriverNumber', 'Position', 'Points', 'GridPosition']]
+                result_cols = ['DriverNumber', 'Position', 'Points', 'GridPosition']
+                if 'Status' in session.results.columns:
+                    result_cols.append('Status')
+                results = session.results[result_cols]
                 results['Season'] = season
                 results['RaceNumber'] = rnd
                 results['Circuit'] = session.event['EventName']
@@ -377,7 +380,7 @@ def _engineer_features(full_data):
 
     # Determine DNFs using status information when available
     if 'Status' in full_data.columns:
-        full_data['DidNotFinish'] = full_data['Status'].str.lower() != 'finished'
+        full_data['DidNotFinish'] = ~full_data['Status'].str.lower().str.contains('finished')
     else:
         full_data['DidNotFinish'] = full_data['Position'] > 20
 
@@ -849,9 +852,27 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             .reset_index()
             .rename(columns={'Position': 'TeamAvgPosition'})
         )
-    team_recent_quali = race_data.groupby('HistoricalTeam')['QualiPosition'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'QualiPosition': 'TeamRecentQuali'})
-    team_recent_finish = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'Position': 'TeamRecentFinish'})
-    team_reliability = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).apply(lambda x: (x > 20).sum()).reset_index().rename(columns={'Position': 'TeamReliability'})
+    team_recent_quali = (
+        race_data.groupby('HistoricalTeam')['QualiPosition']
+        .rolling(window=5, min_periods=1)
+        .mean()
+        .reset_index()
+        .rename(columns={'QualiPosition': 'TeamRecentQuali'})
+    )
+    team_recent_finish = (
+        race_data.groupby('HistoricalTeam')['Position']
+        .rolling(window=5, min_periods=1)
+        .mean()
+        .reset_index()
+        .rename(columns={'Position': 'TeamRecentFinish'})
+    )
+    team_reliability = (
+        race_data.groupby('HistoricalTeam')['DidNotFinish']
+        .rolling(window=5, min_periods=1)
+        .sum()
+        .reset_index()
+        .rename(columns={'DidNotFinish': 'TeamReliability'})
+    )
     team_recent_quali = team_recent_quali.groupby('HistoricalTeam').last().reset_index()
     team_recent_finish = team_recent_finish.groupby('HistoricalTeam').last().reset_index()
     team_reliability = team_reliability.groupby('HistoricalTeam').last().reset_index()
