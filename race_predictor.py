@@ -148,33 +148,17 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
     df = df.rename(columns={"Driver": "Abbreviation", "BestTime": "FP3BestTime"})
     return df[["Abbreviation", "FP3BestTime", "AvgAirTemp", "AvgTrackTemp", "MaxRainfall"]]
 
+
+def _load_overtake_difficulty(path: str = "overtake_stats.csv") -> dict:
+    """Read historical overtaking statistics and convert to difficulty levels."""
+    df = pd.read_csv(path)
+    df["Difficulty"] = pd.qcut(
+        df["AverageOvertakes"], q=5, labels=[5, 4, 3, 2, 1]
+    ).astype(int)
+    return df.set_index("Circuit")["Difficulty"].to_dict()
+
 # Simplified overtaking difficulty metrics (1=easiest, 5=hardest)
-OVERTAKE_DIFFICULTY = {
-    'Bahrain Grand Prix': 2,
-    'Saudi Arabian Grand Prix': 2,
-    'Australian Grand Prix': 3,
-    'Japanese Grand Prix': 3,
-    'Chinese Grand Prix': 3,
-    'Miami Grand Prix': 2,
-    'Emilia Romagna Grand Prix': 4,
-    'Monaco Grand Prix': 5,
-    'Canadian Grand Prix': 3,
-    'Spanish Grand Prix': 4,
-    'Austrian Grand Prix': 2,
-    'British Grand Prix': 3,
-    'Hungarian Grand Prix': 4,
-    'Belgian Grand Prix': 2,
-    'Dutch Grand Prix': 4,
-    'Italian Grand Prix': 2,
-    'Azerbaijan Grand Prix': 3,
-    'Singapore Grand Prix': 5,
-    'United States Grand Prix': 3,
-    'Mexican Grand Prix': 3,
-    'Brazilian Grand Prix': 2,
-    'Las Vegas Grand Prix': 3,
-    'Qatar Grand Prix': 2,
-    'Abu Dhabi Grand Prix': 3,
-}
+OVERTAKE_DIFFICULTY = _load_overtake_difficulty()
 
 # List of grand prix for selection (2024 schedule approximation)
 GRAND_PRIX_LIST = [
@@ -205,7 +189,9 @@ GRAND_PRIX_LIST = [
 ]
 
 
-def _load_historical_data(seasons):
+def _load_historical_data(seasons, overtake_map=None):
+    if overtake_map is None:
+        overtake_map = OVERTAKE_DIFFICULTY
     race_data = []
     for season in seasons:
         for rnd in range(1, 23):
@@ -231,7 +217,7 @@ def _load_historical_data(seasons):
                     results['Rainfall'] = np.nan
 
                 # Overtake difficulty
-                results['OvertakingDifficulty'] = OVERTAKE_DIFFICULTY.get(
+                results['OvertakingDifficulty'] = overtake_map.get(
                     results['Circuit'].iloc[0], 3
                 )
 
