@@ -520,7 +520,9 @@ def _engineer_features(full_data):
 
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
-    full_data['Rainfall'] = full_data['Rainfall'].fillna(0)
+    # Use the median rainfall rather than ``0`` to avoid treating missing
+    # data as a completely dry event which could bias the model.
+    full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
     full_data['AverageOvertakes'] = full_data['AverageOvertakes'].fillna(full_data['AverageOvertakes'].mean())
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
@@ -529,8 +531,13 @@ def _engineer_features(full_data):
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
     full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
-    full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(0)
-    full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(0)
+    # ``0`` can indicate a perfect tie with the team mate. Replace missing
+    # values with the median difference so the model does not interpret them
+    # as exceptionally good laps.
+    full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(
+        full_data['DeltaToTeammateQuali'].median())
+    full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(
+        full_data['QualiSessionGain'].median())
     full_data['DidNotFinish'] = full_data['DidNotFinish'].fillna(False)
     full_data['CircuitLength'] = full_data['CircuitLength'].fillna(full_data['CircuitLength'].mean())
     full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
