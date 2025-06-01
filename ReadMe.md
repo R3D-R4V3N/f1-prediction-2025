@@ -13,7 +13,12 @@ This project uses historical Formula 1 data from the 2020-2025 seasons to build 
 - Qualifying position influence
 - Driver experience factors
 - Circuit-specific performance patterns
+<<<<<<< HEAD
 - Weather conditions and overtaking difficulty metrics
+=======
+ - Weather conditions and average overtakes metrics derived from
+   historical overtake statistics (`overtake_stats.csv`)
+>>>>>>> origin/codex/estimate-overtakes-using-fastf1
 - Best qualifying and practice session times
 
 The system handles team changes for 2025 (like Hamilton moving to Ferrari) and accommodates rookies through team performance metrics.
@@ -22,7 +27,7 @@ The system handles team changes for 2025 (like Hamilton moving to Ferrari) and a
 
 - **Data Collection**: Automated fetching of historical F1 race data using the FastF1 API
 - **Feature Engineering**: Comprehensive driver and team metrics creation, including
-  weather conditions, track overtaking difficulty, and detailed qualifying times
+  weather conditions, average overtakes metrics, and detailed qualifying times
  - **Machine Learning**: Two-stage XGBoost models optimized with Bayesian search to predict qualifying and race finishing positions
 - **Team Change Handling**: Sophisticated method for handling 2025 driver lineup changes
 - **Visualization**: Three different visualizations of prediction results
@@ -75,7 +80,12 @@ This visualization shows:
    - Team performance metrics
    - Driver experience quantification
    - Circuit-specific indicators
+<<<<<<< HEAD
    - Weather measurements and overtaking difficulty
+=======
+   - Weather measurements and average overtakes derived from
+     `overtake_stats.csv`
+>>>>>>> origin/codex/estimate-overtakes-using-fastf1
    - Qualifying and practice session times
 
 3. **Machine Learning Model**
@@ -171,6 +181,26 @@ by passing `export_details=True`:
 from race_predictor import predict_race
 predict_race("Monaco Grand Prix", year=2025, export_details=True)
 ```
+
+## Overtake Estimation
+
+The `estimate_overtakes.py` script approximates the number of overtakes in a
+race by counting how many drivers change position from lap to lap.
+
+Run it for a single Grand Prix:
+
+```bash
+python estimate_overtakes.py "Monaco Grand Prix" 2023
+```
+
+To average overtakes across multiple seasons for the same circuit:
+
+```bash
+python estimate_overtakes.py "Monaco Grand Prix" 2022 2023 2024
+```
+
+Save the values for all circuits in `overtake_stats.csv` and the
+prediction model will use them automatically.
 
 ## Resources
 
