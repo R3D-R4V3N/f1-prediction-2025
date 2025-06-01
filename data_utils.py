@@ -449,7 +449,11 @@ def _engineer_features(full_data):
     full_data['BestQualiTime'] = pd.to_numeric(full_data.get('BestQualiTime'), errors='coerce')
     full_data['FP3BestTime'] = pd.to_numeric(full_data.get('FP3BestTime'), errors='coerce')
     full_data['FP3LongRunTime'] = pd.to_numeric(full_data.get('FP3LongRunTime'), errors='coerce')
-    full_data['SprintFinish'] = pd.to_numeric(full_data.get('SprintFinish'), errors='coerce').fillna(25)
+    full_data['SprintFinish'] = pd.to_numeric(
+        full_data.get('SprintFinish', pd.Series(nan, index=full_data.index)),
+        errors='coerce'
+    )
+    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(25)
     full_data['SprintFinish'] = full_data['SprintFinish'].clip(1, 25)
     if 'GridDropCount' in full_data.columns:
         full_data['GridDropCount'] = pd.to_numeric(full_data['GridDropCount'], errors='coerce').fillna(0)
@@ -799,17 +803,24 @@ def _prepare_features(
     for col in base_cols:
         full_data[col] = to_numeric(full_data[col], errors="coerce")
     full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
-    if team_encoder is None:
-        team_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-        team_encoded = team_encoder.fit_transform(full_data[["TeamTier"]])
-    else:
-        team_encoded = team_encoder.transform(full_data[["TeamTier"]])
-    team_df = pd.DataFrame(
-        team_encoded, columns=team_encoder.get_feature_names_out(["TeamTier"])
-    )
-    team_df.columns = [c.replace("TeamTier_", "TeamTier_") for c in team_df.columns]
     team_cols = [f"TeamTier_{i}" for i in range(4)]
-    team_df = team_df.reindex(columns=team_cols, fill_value=0)
+    if "TeamTier" in full_data.columns:
+        if team_encoder is None:
+            team_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+            team_encoded = team_encoder.fit_transform(full_data[["TeamTier"]])
+        else:
+            team_encoded = team_encoder.transform(full_data[["TeamTier"]])
+        team_df = pd.DataFrame(
+            team_encoded, columns=team_encoder.get_feature_names_out(["TeamTier"])
+        )
+        team_df.columns = [c.replace("TeamTier_", "TeamTier_") for c in team_df.columns]
+        team_df = team_df.reindex(columns=team_cols, fill_value=0)
+    else:
+        # Assume one-hot columns already present
+        for col in team_cols:
+            if col not in full_data.columns:
+                full_data[col] = 0
+        team_df = pd.DataFrame(index=full_data.index)
     if top_circuits is None:
         top_circuits = (
             full_data["Circuit"].value_counts().nlargest(10).index.tolist()
