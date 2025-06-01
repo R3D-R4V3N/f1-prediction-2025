@@ -1,6 +1,7 @@
 from typing import Iterable
 import logging
 import os
+import pickle
 
 from numpy import mean, ndarray
 import pandas as pd

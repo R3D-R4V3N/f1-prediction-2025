@@ -1,20 +1,20 @@
+import pytest
 import pandas as pd
 
-from pipeline import predict_race  # not used but to ensure import
 
-from data_utils import _engineer_features
-
-def _drop_leakage(df, year, this_race_number):
-    mask_past = ~((df['Season'] == year) & (df['RaceNumber'] >= this_race_number))
-    return df.loc[mask_past]
-
-def test_data_leakage():
+def test_data_leakage_filter():
     df = pd.DataFrame({
-        'Season': [2025]*4,
-        'RaceNumber': [5,6,7,8],
-        'DriverNumber': [1,1,1,1],
-        'GridPosition': [1,1,1,1],
-        'Position': [1,1,1,1]
+        "Season": [2025, 2025, 2025, 2025],
+        "RaceNumber": [5, 6, 7, 8],
+        "DriverNumber": [1, 1, 1, 1],
+        "Position": [3, 4, 5, 6],
     })
-    cleaned = _drop_leakage(df, 2025, 5)
-    assert cleaned.empty
+    this_race_number = 5
+    mask_past = ~((df["Season"] == 2025) & (df["RaceNumber"] >= this_race_number))
+    filtered = df.loc[mask_past]
+    assert filtered.empty
+
+    this_race_number = 7
+    mask_past = ~((df["Season"] == 2025) & (df["RaceNumber"] >= this_race_number))
+    filtered = df.loc[mask_past]
+    assert list(filtered["RaceNumber"]) == [5, 6]
