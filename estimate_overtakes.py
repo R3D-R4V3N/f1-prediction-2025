@@ -11,14 +11,34 @@ import pandas as pd
 
 
 def _count_position_changes(laps: pd.DataFrame) -> int:
-    """Return the number of position changes between consecutive laps."""
+    """Return the number of genuine position changes during a race.
+
+    The input ``laps`` must contain the columns ``Driver``, ``LapNumber``,
+    ``Position``, ``IsAccurate``, ``PitInTime`` and ``PitOutTime``. Only laps
+    marked as accurate are considered. Laps where a driver's position is greater
+    than 20 or where the driver is entering or leaving the pit lane are ignored.
+    ``NaN`` values produced by this filtering are treated as no information, so
+    position changes are only counted when both consecutive laps contain valid
+    data for a driver.
+    """
+
     if laps.empty:
         return 0
+
+    valid = laps[laps["IsAccurate"] == True].copy()
+    valid = valid[valid["Position"].le(20)]
+    valid = valid[valid["PitInTime"].isna() & valid["PitOutTime"].isna()]
+
+    if valid.empty:
+        return 0
+
     positions = (
-        laps.pivot_table(index="LapNumber", columns="Driver", values="Position")
+        valid.pivot_table(index="LapNumber", columns="Driver", values="Position")
         .sort_index()
     )
-    changes = positions.diff().fillna(0).astype(bool)
+
+    diffs = positions.diff()
+    changes = diffs.fillna(0).astype(bool)
     return int(changes.sum().sum())
 
 
@@ -36,7 +56,16 @@ def count_overtakes(year: int, grand_prix: str) -> int:
     round_number = int(match.iloc[0]["RoundNumber"])
     session = fastf1.get_session(year, round_number, "R")
     session.load(telemetry=False, weather=False)
-    laps = session.laps[["Driver", "LapNumber", "Position"]]
+    laps = session.laps[
+        [
+            "Driver",
+            "LapNumber",
+            "Position",
+            "IsAccurate",
+            "PitInTime",
+            "PitOutTime",
+        ]
+    ]
     return _count_position_changes(laps)
 
 
