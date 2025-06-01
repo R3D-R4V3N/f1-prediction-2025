@@ -25,7 +25,7 @@ def _count_position_changes(laps: pd.DataFrame) -> int:
     if laps.empty:
         return 0
 
-    valid = laps[laps["IsAccurate"] == True].copy()
+    valid = laps[laps["IsAccurate"]].copy()
     valid = valid[valid["Position"].le(20)]
     valid = valid[valid["PitInTime"].isna() & valid["PitOutTime"].isna()]
 

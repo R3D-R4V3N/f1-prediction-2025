@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import mean_absolute_error
+from scipy.stats import spearmanr
 from sklearn.model_selection import TimeSeriesSplit
 from xgboost import XGBRegressor, plot_importance
 import matplotlib.pyplot as plt
@@ -699,7 +700,7 @@ def _prepare_features(
 
     if top_circuits is not None:
         circuit_cols = [f"Circuit_{c}" for c in top_circuits]
-        if f"Circuit_Other" in circuit_df.columns:
+        if "Circuit_Other" in circuit_df.columns:
             circuit_cols.append("Circuit_Other")
         circuit_df = circuit_df.reindex(columns=circuit_cols, fill_value=0)
 
@@ -728,6 +729,25 @@ def _encode_features(
         top_circuits,
         top_teams,
     )
+
+
+def _rank_metrics(actual: pd.Series, preds: np.ndarray) -> dict:
+    """Compute ranking-focused metrics."""
+
+    actual_series = pd.Series(actual).reset_index(drop=True)
+    pred_series = pd.Series(preds)
+
+    rho = spearmanr(actual_series, pred_series).correlation
+    pred_order = pred_series.rank(method="first").sort_values().index
+    actual_order = actual_series.rank(method="first").sort_values().index
+
+    top1 = float(pred_order[0] == actual_order[0]) if len(pred_order) else 0.0
+    if len(pred_order) >= 3 and len(actual_order) >= 3:
+        top3 = len(set(pred_order[:3]) & set(actual_order[:3])) / 3.0
+    else:
+        top3 = 0.0
+
+    return {"spearman": rho, "top1": top1, "top3": top3}
 
 
 def _train_model(features, target, cv, debug=False):
@@ -845,6 +865,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     holdout_df = race_data[race_data['Season'] == holdout_year]
     train_df = race_data[race_data['Season'] < holdout_year]
     holdout_mae = None
+    holdout_rank = None
     if not holdout_df.empty and not train_df.empty:
         (
             ho_feat,
@@ -865,6 +886,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         ho_model, _ = _train_model(ho_feat, train_df['Position'], cv_ho, debug)
         ho_preds = ho_model.predict(ho_val_feat)
         holdout_mae = mean_absolute_error(holdout_df['Position'], ho_preds)
+        holdout_rank = _rank_metrics(holdout_df['Position'], ho_preds)
     # Encode features for the race model
     (
         features,
@@ -884,6 +906,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     finish_preds_hist = model.predict(features)
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
+    train_rank = _rank_metrics(race_data['Position'], finish_preds_hist)
 
     # Now fetch the driver line-up and session data for the target event
     try:
@@ -1195,8 +1218,17 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         print(
             f"📊 CV MAE: {cv_mae:.2f} -- Hold-out MAE: {holdout_mae:.2f} -- Training MAE: {finish_mae:.2f}"
         )
+        print(
+            f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} (train) / {holdout_rank['spearman']:.2f} (hold-out) "
+            f"-- Top1: {train_rank['top1']*100:.0f}% / {holdout_rank['top1']*100:.0f}% "
+            f"-- Top3: {train_rank['top3']*100:.0f}% / {holdout_rank['top3']*100:.0f}%"
+        )
     else:
         print(f"📊 CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
+        print(
+            f"📈 Spearman \u03c1: {train_rank['spearman']:.2f} -- "
+            f"Top1: {train_rank['top1']*100:.0f}% -- Top3: {train_rank['top3']*100:.0f}%"
+        )
     return results
 
 
