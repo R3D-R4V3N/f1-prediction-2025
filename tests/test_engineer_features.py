@@ -8,7 +8,12 @@ def test_delta_and_cross_avg_and_rookie_flag():
         "RaceNumber": [1, 1, 1, 1],
         "DriverNumber": [1, 2, 1, 2],
         "Team": ["A", "A", "A", "A"],
-        "BestQualiTime": [pd.Timedelta("1:10"), pd.Timedelta("1:11"), pd.Timedelta("1:12"), pd.NaT],
+        "BestQualiTime": [
+            pd.to_timedelta("00:01:10"),
+            pd.to_timedelta("00:01:11"),
+            pd.to_timedelta("00:01:12"),
+            pd.NaT,
+        ],
         "Position": [5, 6, 3, 4],
         "Date": pd.to_datetime(["2024-03-01", "2024-03-01", "2025-03-01", "2025-03-01"]),
     })
