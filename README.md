@@ -4,7 +4,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 
 ## Features
 
-- **Race and qualifying prediction** using a two stage XGBoost model.
+- **Race prediction** using a single XGBoost model.
 - **Automatic team and driver handling** for 2025 line‑ups, including rookies.
 - **Weather and circuit statistics** such as air/track temperature and estimated overtakes per circuit.
 - **Historical performance metrics** like driver experience, recent form and track specific results.
@@ -21,10 +21,7 @@ The model is trained on event data from the 2020‑2025 seasons. For each race i
 4. **Average overtakes** per circuit calculated with `estimate_overtakes.py`.
 5. **Championship standings and circuit metadata** such as track length.
 
-Two XGBoost regressors are trained:
-
-1. A *qualifying* model predicts the starting grid.
-2. A *race* model uses the predicted grid and all engineered features to forecast the finishing order.
+An XGBoost regressor uses the official starting grid and all engineered features to forecast the finishing order.
 
 The scripts keep track of team changes and compute various aggregates (recent results, driver performance at a circuit, reliability, etc.).
 

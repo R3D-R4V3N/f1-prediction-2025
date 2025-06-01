@@ -728,22 +728,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
         'DownforceLevel', 'DriverChampPoints', 'ConstructorChampPoints',
         'DriverStanding', 'ConstructorStanding', 'CircuitLength'
     ]
-    quali_cols = [
-        'Season', 'ExperienceCount', 'TeamAvgPosition', 'RecentAvgPosition',
-        'RecentAvgPoints', 'AirTemp', 'TrackTemp', 'Rainfall',
-        'AverageOvertakes', 'BestQualiTime', 'FP3BestTime',
-        'DeltaToBestQuali', 'DeltaToTeammateQuali', 'GridDropCount',
-        'QualiSessionGain', 'TeamRecentQuali', 'IsStreet',
-        'DownforceLevel', 'DriverChampPoints', 'ConstructorChampPoints',
-        'DriverStanding', 'ConstructorStanding', 'CircuitLength'
-    ]
-
-    # Encode features for both models using shared encoders
+    # Encode features for the race model
     features, team_enc, circuit_enc, top_circuits = _encode_features(
         race_data, race_cols
-    )
-    quali_feats, _, _, _ = _encode_features(
-        race_data, quali_cols, team_enc, circuit_enc, top_circuits
     )
 
     cv = TimeSeriesSplit(n_splits=3)
@@ -751,20 +738,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # Train race finish model
     target = race_data['Position']
     model = _train_model(features, target, cv, debug)
-    # Train grid prediction model
-    grid_model = _train_model(quali_feats, race_data['GridPosition'], cv, debug)
 
-    grid_preds_hist = grid_model.predict(quali_feats)
-    grid_mae = mean_absolute_error(race_data['GridPosition'], grid_preds_hist)
-    race_data['PredGrid'] = grid_preds_hist
-
-    race_feats_with_pred, _, _, _ = _encode_features(
-        race_data, race_cols + ['PredGrid'], team_enc, circuit_enc, top_circuits
-    )
-    model = _train_model(race_feats_with_pred, target, cv, debug)
-    finish_preds_hist = model.predict(race_feats_with_pred)
+    finish_preds_hist = model.predict(features)
     finish_mae = mean_absolute_error(race_data['Position'], finish_preds_hist)
-    features = race_feats_with_pred
 
     # Retrieve FP3 results now so default values include real session data if
     # available.
@@ -777,10 +753,8 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results['BestTime'].mean()
-        default_qpos = qual_results['GridPosition'].mean()
     else:
         default_best_q = race_data['BestQualiTime'].mean()
-        default_qpos = race_data['QualiPosition'].mean()
 
     if fp3_results is not None and not fp3_results.empty:
         default_air = fp3_results['AvgAirTemp'].mean()
@@ -963,23 +937,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     if pred_df.empty:
         raise ValueError(f"No driver data available for {year} {grand_prix}")
 
-    if qual_results is None:
-        # Predict grid positions when no qualifying data is available
-        quali_pred_features, _, _, _ = _encode_features(
-            pred_df.assign(Circuit=grand_prix),
-            quali_cols,
-            team_enc,
-            circuit_enc,
-            top_circuits,
-        )
-        grid_scores = grid_model.predict(quali_pred_features)
-        pred_df['GridPosition'] = pd.Series(grid_scores).rank(method='first').astype(int)
-        pred_df['QualiPosition'] = pred_df['GridPosition']
-        pred_df['PredGrid'] = grid_scores
-    else:
-        pred_df['PredGrid'] = pred_df['GridPosition']
-    # Save the driver list with predicted grid positions so the user can inspect
-    # the raw input given to the finish model.
+    # Save the driver list so the raw input fed to the model can be inspected.
     pred_df.to_csv("prediction_input.csv", index=False)
 
     # Encode the prediction rows using the same helper as for training. This
@@ -987,7 +945,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     # encoded team and circuit features.
     race_pred_features, _, _, _ = _encode_features(
         pred_df.assign(Circuit=grand_prix),
-        race_cols + ['PredGrid'],
+        race_cols,
         team_enc,
         circuit_enc,
         top_circuits,
@@ -1014,7 +972,6 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             print(f"Saved session data to {detail_path}")
         except Exception as err:
             print(f"Could not export session data: {err}")
-    print(f"Grid MAE on training data: {grid_mae:.2f}")
     print(f"Finish MAE on training data: {finish_mae:.2f}")
     return results
 
