@@ -820,7 +820,9 @@ def _train_model(features, target, cv, debug=False):
 
 
 def predict_race(grand_prix, year=2025, export_details=False, debug=False, compute_overtakes=True):
-    seasons = list(range(2020, year))
+    # Include the target ``year`` in the loaded dataset so any completed races
+    # from the ongoing season contribute to championship standings.
+    seasons = list(range(2020, year + 1))
 
     overtake_map = _load_overtake_stats()
     if compute_overtakes:
