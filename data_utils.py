@@ -432,6 +432,13 @@ def _add_driver_team_info(full_data, seasons):
 
 
 def _engineer_features(full_data):
+    if 'HistoricalTeam' not in full_data.columns:
+        if 'Team' in full_data.columns:
+            full_data['HistoricalTeam'] = full_data['Team']
+        else:
+            full_data['HistoricalTeam'] = 'Unknown Team'
+    if 'Circuit' not in full_data.columns:
+        full_data['Circuit'] = 'Unknown Circuit'
     full_data['Position'] = pd.to_numeric(full_data.get('Position'), errors='coerce').fillna(25)
     grid_series = (
         full_data['GridPosition'] if 'GridPosition' in full_data.columns
@@ -858,9 +865,23 @@ def _encode_features(
     top_circuits=None,
 ):
     """Encode prepared features using provided or fitted encoders."""
+    base_cols = base_cols or race_cols
+
+    already_encoded = (
+        all(col in full_data.columns for col in base_cols)
+        and 'Circuit' not in full_data.columns
+        and 'HistoricalTeam' not in full_data.columns
+        and 'Team' not in full_data.columns
+        and 'TeamTier' not in full_data.columns
+    )
+
+    if already_encoded:
+        features = full_data[base_cols].copy()
+        return features, team_encoder, circuit_encoder, top_circuits
+
     return _prepare_features(
         full_data,
-        base_cols or race_cols,
+        base_cols,
         team_encoder,
         circuit_encoder,
         top_circuits,
