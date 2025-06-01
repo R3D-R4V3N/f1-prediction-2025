@@ -29,7 +29,7 @@ def _fetch_session_data(
             status = getattr(exc.response, "status_code", None)
             if status == 429 and attempt < retries:
                 wait_time = 2 ** attempt
-                print(f"Rate limit hit, retrying in {wait_time}s...")
+                print(f"⏳ Rate limit hit, retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 attempt += 1
                 continue
@@ -142,7 +142,7 @@ def export_race_details(year: int, grand_prix: str) -> str:
                 'MaxRainfall': [None],
             })
             data_frames.append(fallback)
-            print(f"Failed to load {code} session: {err}")
+            print(f"⚠️ Failed to load {code} session: {err}")
 
     df = pd.concat(data_frames, ignore_index=True)
     out_dir = 'race_details'
@@ -150,6 +150,7 @@ def export_race_details(year: int, grand_prix: str) -> str:
     safe_name = event_name.lower().replace(' ', '_')
     file_path = os.path.join(out_dir, f"{year}_{safe_name}.csv")
     df.to_csv(file_path, index=False)
+    print(f"✅ Saved session data to {file_path}")
     return file_path
 
 
@@ -160,7 +161,7 @@ def main() -> None:
     args = parser.parse_args()
 
     file_path = export_race_details(args.year, args.grand_prix)
-    print(f"Saved session data to {file_path}")
+    print(f"✅ Saved session data to {file_path}")
 
 
 if __name__ == '__main__':

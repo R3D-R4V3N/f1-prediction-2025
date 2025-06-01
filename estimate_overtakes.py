@@ -76,7 +76,7 @@ def average_overtakes(grand_prix: str, years: Iterable[int]) -> float:
         try:
             counts.append(count_overtakes(yr, grand_prix))
         except Exception as err:
-            print(f"Failed to process {yr} {grand_prix}: {err}")
+            print(f"⚠️ Failed to process {yr} {grand_prix}: {err}")
     if not counts:
         raise RuntimeError("No races processed")
     return statistics.mean(counts)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     avg = average_overtakes(args.grand_prix, args.years)
-    print(f"Average overtakes at {args.grand_prix}: {avg:.1f}")
+    print(f"📈 Average overtakes at {args.grand_prix}: {avg:.1f}")
 
     # Update or create the CSV used by the prediction model
     out_file = "overtake_stats.csv"

@@ -725,7 +725,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             avg = average_overtakes(grand_prix, years_for_avg)
             overtake_map[grand_prix] = avg
         except Exception as err:
-            print(f"Could not compute overtakes for {grand_prix}: {err}")
+            print(f"⚠️ Could not compute overtakes for {grand_prix}: {err}")
 
     race_data = _load_historical_data(seasons, overtake_map)
     race_data = _clean_historical_data(race_data).reset_index(drop=True)
@@ -1065,10 +1065,10 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
     if export_details:
         try:
             detail_path = export_race_details(year, grand_prix)
-            print(f"Saved session data to {detail_path}")
+            print(f"📁 Saved session data to {detail_path}")
         except Exception as err:
-            print(f"Could not export session data: {err}")
-    print(f"CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
+            print(f"⚠️ Could not export session data: {err}")
+    print(f"📊 CV MAE: {cv_mae:.2f} -- Training MAE: {finish_mae:.2f}")
     return results
 
 
