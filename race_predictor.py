@@ -86,32 +86,9 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
     except Exception:
         pass
 
-    # Absolute fallback: use a static list so the rest of the pipeline can be
-    # exercised even when no API data is available. This helps verify that the
-    # CSV export works.
-    fallback_drivers = [
-        {"DriverNumber": 1, "Abbreviation": "VER", "FullName": "Max Verstappen", "Team": "Red Bull"},
-        {"DriverNumber": 11, "Abbreviation": "PER", "FullName": "Sergio Perez", "Team": "Red Bull"},
-        {"DriverNumber": 16, "Abbreviation": "LEC", "FullName": "Charles Leclerc", "Team": "Ferrari"},
-        {"DriverNumber": 55, "Abbreviation": "SAI", "FullName": "Carlos Sainz", "Team": "Ferrari"},
-        {"DriverNumber": 63, "Abbreviation": "RUS", "FullName": "George Russell", "Team": "Mercedes"},
-        {"DriverNumber": 44, "Abbreviation": "HAM", "FullName": "Lewis Hamilton", "Team": "Mercedes"},
-        {"DriverNumber": 4, "Abbreviation": "NOR", "FullName": "Lando Norris", "Team": "McLaren"},
-        {"DriverNumber": 81, "Abbreviation": "PIA", "FullName": "Oscar Piastri", "Team": "McLaren"},
-        {"DriverNumber": 14, "Abbreviation": "ALO", "FullName": "Fernando Alonso", "Team": "Aston Martin"},
-        {"DriverNumber": 18, "Abbreviation": "STR", "FullName": "Lance Stroll", "Team": "Aston Martin"},
-        {"DriverNumber": 20, "Abbreviation": "MAG", "FullName": "Kevin Magnussen", "Team": "Haas"},
-        {"DriverNumber": 27, "Abbreviation": "HUL", "FullName": "Nico Hulkenberg", "Team": "Haas"},
-        {"DriverNumber": 31, "Abbreviation": "OCO", "FullName": "Esteban Ocon", "Team": "Alpine"},
-        {"DriverNumber": 10, "Abbreviation": "GAS", "FullName": "Pierre Gasly", "Team": "Alpine"},
-        {"DriverNumber": 22, "Abbreviation": "TSU", "FullName": "Yuki Tsunoda", "Team": "RB"},
-        {"DriverNumber": 3, "Abbreviation": "RIC", "FullName": "Daniel Ricciardo", "Team": "RB"},
-        {"DriverNumber": 23, "Abbreviation": "ALB", "FullName": "Alexander Albon", "Team": "Williams"},
-        {"DriverNumber": 2, "Abbreviation": "SAR", "FullName": "Logan Sargeant", "Team": "Williams"},
-        {"DriverNumber": 77, "Abbreviation": "BOT", "FullName": "Valtteri Bottas", "Team": "Kick Sauber"},
-        {"DriverNumber": 24, "Abbreviation": "ZHO", "FullName": "Guanyu Zhou", "Team": "Kick Sauber"},
-    ]
-    return pd.DataFrame(fallback_drivers)
+    # If all attempts fail, return an empty DataFrame instead of using a static
+    # hard-coded driver list.
+    return pd.DataFrame(columns=["DriverNumber", "Abbreviation", "FullName", "Team"])
 
 
 def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
@@ -139,7 +116,9 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     round_number = int(match.iloc[0]["RoundNumber"])
     session = fastf1.get_session(year, round_number, "Q")
     session.load()
-    q_res = session.results[["Abbreviation", "Position", "Q1", "Q2", "Q3"]].copy()
+    q_res = session.results[
+        ["DriverNumber", "Abbreviation", "FullName", "TeamName", "Position", "Q1", "Q2", "Q3"]
+    ].copy()
 
     def _to_seconds(val):
         if pd.isna(val):
@@ -152,7 +131,7 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     for col in ["Q1", "Q2", "Q3"]:
         q_res[col] = q_res[col].apply(_to_seconds)
     q_res["BestTime"] = q_res[["Q1", "Q2", "Q3"]].min(axis=1)
-    q_res.rename(columns={"Position": "GridPosition"}, inplace=True)
+    q_res.rename(columns={"Position": "GridPosition", "TeamName": "Team"}, inplace=True)
     return q_res
 
 
@@ -563,12 +542,18 @@ def _train_model(features, target, cv):
 
 
 def predict_race(grand_prix, year=2025, export_details=False):
-    seasons = [2020, 2021, 2022, 2023, 2024]
+    seasons = list(range(2020, year + 1))
     race_data = _load_historical_data(seasons)
     race_data = race_data.reset_index(drop=True)
     # Ensure DriverNumber is numeric for consistent merging
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
-    drivers_df = _get_event_drivers(year, grand_prix)
+    qual_results = None
+    try:
+        drivers_df = _get_qualifying_results(year, grand_prix)
+        drivers_df = drivers_df[drivers_df['BestTime'].notna()]
+        qual_results = drivers_df.copy()
+    except Exception:
+        drivers_df = _get_event_drivers(year, grand_prix)
     drivers_df['DriverNumber'] = pd.to_numeric(drivers_df['DriverNumber'], errors='coerce')
     race_data = pd.merge(race_data, drivers_df, on='DriverNumber', how='left')
     race_data = _add_driver_team_info(race_data, seasons)
@@ -645,12 +630,20 @@ def predict_race(grand_prix, year=2025, export_details=False):
     # Prepare prediction dataframe for all drivers
     pred_rows = []
     team_strength = (
-        race_data[race_data['Season'] == 2024]
+        race_data[race_data['Season'] == year]
         .groupby('HistoricalTeam')['Position']
         .mean()
         .reset_index()
         .rename(columns={'Position': 'TeamAvgPosition'})
     )
+    if team_strength.empty and year > 2020:
+        team_strength = (
+            race_data[race_data['Season'] == year - 1]
+            .groupby('HistoricalTeam')['Position']
+            .mean()
+            .reset_index()
+            .rename(columns={'Position': 'TeamAvgPosition'})
+        )
     team_recent_quali = race_data.groupby('HistoricalTeam')['QualiPosition'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'QualiPosition': 'TeamRecentQuali'})
     team_recent_finish = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).mean().reset_index().rename(columns={'Position': 'TeamRecentFinish'})
     team_reliability = race_data.groupby('HistoricalTeam')['Position'].rolling(window=5, min_periods=1).apply(lambda x: (x > 20).sum()).reset_index().rename(columns={'Position': 'TeamReliability'})
@@ -666,16 +659,18 @@ def predict_race(grand_prix, year=2025, export_details=False):
         ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
     ]
 
-    try:
-        qual_results = _get_qualifying_results(year, grand_prix)
-        qual_results = qual_results.merge(
-            drivers_df[['Abbreviation', 'FullName', 'Team', 'DriverNumber']],
-            on='Abbreviation',
-            how='left'
-        )
-        qual_results = qual_results[qual_results['BestTime'].notna()]
-    except Exception:
-        qual_results = None
+    if qual_results is None:
+        try:
+            qual_results = _get_qualifying_results(year, grand_prix)
+            if not drivers_df.empty:
+                qual_results = qual_results.merge(
+                    drivers_df[['Abbreviation', 'FullName', 'Team', 'DriverNumber']],
+                    on='Abbreviation',
+                    how='left'
+                )
+            qual_results = qual_results[qual_results['BestTime'].notna()]
+        except Exception:
+            qual_results = None
 
     try:
         fp3_results = _get_fp3_results(year, grand_prix)
@@ -796,7 +791,7 @@ def predict_race(grand_prix, year=2025, export_details=False):
 
     preds = model.predict(pred_features)
     results = pd.DataFrame({
-        'Driver': pred_df['FullName'],
+        'Driver': pred_df['Abbreviation'],
         'Team': pred_df['Team'],
         'Grid': pred_df['GridPosition'],
         'Predicted_Position': preds
