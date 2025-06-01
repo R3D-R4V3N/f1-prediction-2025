@@ -656,7 +656,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
         'GridPosition', 'Season', 'ExperienceCount', 'TeamAvgPosition',
         'RecentAvgPosition', 'RecentAvgPoints', 'AirTemp', 'TrackTemp',
         'Rainfall', 'OvertakingDifficulty', 'BestQualiTime',
-        'QualiPosition', 'FP3BestTime', 'Recent3AvgFinish',
+        'QualiPosition', 'FP3BestTime', 'DeltaToBestQuali',
+        'DeltaToTeammateQuali', 'DeltaToTeammateFinish',
+        'GridDropCount', 'QualiSessionGain', 'Recent3AvgFinish',
         'Recent5AvgFinish', 'QualiImprove', 'DriverAvgTrackFinish',
         'DriverTrackPodiums', 'DriverTrackDNFs', 'TeamRecentQuali',
         'TeamRecentFinish', 'TeamReliability', 'IsStreet',
@@ -666,7 +668,9 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
         'Season', 'ExperienceCount', 'TeamAvgPosition', 'RecentAvgPosition',
         'RecentAvgPoints', 'AirTemp', 'TrackTemp', 'Rainfall',
         'OvertakingDifficulty', 'BestQualiTime', 'FP3BestTime',
-        'TeamRecentQuali', 'IsStreet', 'DownforceLevel'
+        'DeltaToBestQuali', 'DeltaToTeammateQuali', 'GridDropCount',
+        'QualiSessionGain', 'TeamRecentQuali', 'IsStreet',
+        'DownforceLevel'
     ]
 
     # Encode features for both models using shared encoders
@@ -778,6 +782,25 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
         except Exception:
             fp3_results = None
 
+    if qual_results is not None and not qual_results.empty:
+        fastest = qual_results['BestTime'].min()
+        qual_results['DeltaToBestQuali'] = qual_results['BestTime'] - fastest
+        team_mean = qual_results.groupby('Team')['BestTime'].transform('mean')
+        team_size = qual_results.groupby('Team')['BestTime'].transform('size')
+        qual_results['DeltaToTeammateQuali'] = np.where(team_size > 1,
+                                                       (qual_results['BestTime'] - team_mean) * 2,
+                                                       0)
+        if 'Q1' in qual_results.columns and 'Q3' in qual_results.columns:
+            qual_results['QualiSessionGain'] = qual_results['Q1'] - qual_results['Q3']
+            std = qual_results['QualiSessionGain'].std()
+            qual_results['QualiSessionGain'] = (
+                (qual_results['QualiSessionGain'] - qual_results['QualiSessionGain'].mean()) / std
+            ) if std != 0 else 0
+        else:
+            qual_results['QualiSessionGain'] = 0
+        qual_results['GridDropCount'] = 0
+        qual_results['DeltaToTeammateFinish'] = 0
+
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
     for _, d in driver_iter.iterrows():
         exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']])
@@ -832,6 +855,11 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False):
             'BestQualiTime': best_time,
             'QualiPosition': grid_pos,
             'FP3BestTime': fp3_time,
+            'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
+            'DeltaToTeammateQuali': d.get('DeltaToTeammateQuali', 0),
+            'DeltaToTeammateFinish': d.get('DeltaToTeammateFinish', 0),
+            'GridDropCount': d.get('GridDropCount', 0),
+            'QualiSessionGain': d.get('QualiSessionGain', 0),
             'Recent3AvgFinish': 10.0,
             'Recent5AvgFinish': 10.0,
             'QualiImprove': 0.0,
