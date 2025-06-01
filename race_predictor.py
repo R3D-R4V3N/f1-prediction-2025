@@ -203,6 +203,25 @@ GRAND_PRIX_LIST = [
 ]
 
 
+def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a cleaned historical dataset for model training.
+
+    This removes duplicated driver entries per race and clips grid/finish
+    positions to the valid range of 1-20. Rows without a driver number are
+    dropped as they cannot be matched to future events.
+    """
+    if df.empty:
+        return df
+
+    df = df.drop_duplicates(subset=["Season", "RaceNumber", "DriverNumber"])
+    df = df[df["DriverNumber"].notna()]
+    df["Position"] = pd.to_numeric(df["Position"], errors="coerce")
+    df["GridPosition"] = pd.to_numeric(df["GridPosition"], errors="coerce")
+    df["Position"] = df["Position"].clip(1, 20)
+    df["GridPosition"] = df["GridPosition"].clip(1, 20)
+    return df
+
+
 def _load_historical_data(seasons, overtake_map=None):
     if overtake_map is None:
         overtake_map = OVERTAKE_AVERAGES
@@ -501,7 +520,9 @@ def _engineer_features(full_data):
 
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
-    full_data['Rainfall'] = full_data['Rainfall'].fillna(0)
+    # Use the median rainfall rather than ``0`` to avoid treating missing
+    # data as a completely dry event which could bias the model.
+    full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
     full_data['AverageOvertakes'] = full_data['AverageOvertakes'].fillna(full_data['AverageOvertakes'].mean())
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(full_data['BestQualiTime'].mean())
     full_data['QualiPosition'] = full_data['QualiPosition'].fillna(20)
@@ -510,8 +531,13 @@ def _engineer_features(full_data):
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
     full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
-    full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(0)
-    full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(0)
+    # ``0`` can indicate a perfect tie with the team mate. Replace missing
+    # values with the median difference so the model does not interpret them
+    # as exceptionally good laps.
+    full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(
+        full_data['DeltaToTeammateQuali'].median())
+    full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(
+        full_data['QualiSessionGain'].median())
     full_data['DidNotFinish'] = full_data['DidNotFinish'].fillna(False)
     full_data['CircuitLength'] = full_data['CircuitLength'].fillna(full_data['CircuitLength'].mean())
     full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
@@ -578,8 +604,11 @@ def _prepare_features(full_data, base_cols, team_encoder=None, circuit_encoder=N
     # ``0`` to keep shapes consistent during prediction.
     for col in base_cols:
         if col not in full_data.columns:
-            full_data[col] = 0
-        full_data[col] = pd.to_numeric(full_data[col], errors="coerce").fillna(0)
+            full_data[col] = np.nan
+        full_data[col] = pd.to_numeric(full_data[col], errors="coerce")
+    # Fill remaining NaNs with the column median to reduce the impact of
+    # missing values on the model while keeping feature scales realistic.
+    full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
 
     if team_encoder is None:
         team_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
@@ -678,7 +707,7 @@ def predict_race(grand_prix, year=2025, export_details=False, debug=False, compu
             print(f"Could not compute overtakes for {grand_prix}: {err}")
 
     race_data = _load_historical_data(seasons, overtake_map)
-    race_data = race_data.reset_index(drop=True)
+    race_data = _clean_historical_data(race_data).reset_index(drop=True)
     # Ensure DriverNumber is numeric for consistent merging
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
     qual_results = None
