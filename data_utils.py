@@ -789,8 +789,11 @@ def _engineer_features(full_data):
     if 'Q2Time' in full_data.columns:
         full_data['MissedQ2'] = full_data['Q2Time'].isna().astype(int)
 
-    full_data['DeltaToNext'] = full_data['DeltaToNext_Q3']
-    full_data.loc[full_data['MissedQ3'] == 1, 'DeltaToNext'] = DELTA_NEXT_PENALTY
+    # ``DeltaToNext`` is initially computed from ``BestQualiTime`` above.  Only
+    # replace it with the Q3-based value when actual Q3 times are present.
+    if 'Q3Time' in full_data.columns and full_data['Q3Time'].notna().any():
+        full_data['DeltaToNext'] = full_data['DeltaToNext_Q3']
+        full_data.loc[full_data['MissedQ3'] == 1, 'DeltaToNext'] = DELTA_NEXT_PENALTY
     if 'BestQualiTime' in full_data.columns:
         team_mean_q = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('mean')
         team_size = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('size')
@@ -1166,7 +1169,13 @@ def _prepare_features(
         if col not in full_data.columns:
             full_data[col] = nan
         full_data[col] = to_numeric(full_data[col], errors="coerce")
+    # Replace missing numeric values with the column median when available.
+    # When a column contains only ``NaN`` values the median will also be ``NaN``
+    # which would leave missing values in the resulting feature frame.  To
+    # ensure a fully numeric dataset (as required by the tests) fill any
+    # remaining ``NaN`` values with ``0`` as a reasonable default.
     full_data[base_cols] = full_data[base_cols].fillna(full_data[base_cols].median())
+    full_data[base_cols] = full_data[base_cols].fillna(0)
     team_cols = [f"TeamTier_{i}" for i in range(4)]
     if "TeamTier" in full_data.columns:
         if team_encoder is None:
