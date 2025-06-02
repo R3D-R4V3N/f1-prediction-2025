@@ -438,29 +438,60 @@ def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
 
 
 def _add_driver_team_info(full_data, seasons):
-    seasons_drivers = {}
+    """Attach driver team information using historical race results.
+
+    Driver line-ups can change mid-season.  To capture this the function
+    collects the team for every race in ``seasons`` and, for each row in
+    ``full_data``, assigns the team from the latest race at or before that
+    event.
+    """
+
+    season_history = {}
+
     for season in seasons:
         try:
             schedule = get_event_schedule(season)
-            first_race = schedule.iloc[0]['RoundNumber']
-            session = get_session(season, first_race, 'R')
-            session.load()
-            df = pd.DataFrame(session.results.values, columns=session.results.columns)
-            for _, row in df.iterrows():
-                driver_number = row['DriverNumber']
-                driver_team = row['TeamName']
-                seasons_drivers.setdefault(season, {})[driver_number] = driver_team
+            rounds = (
+                schedule["RoundNumber"].dropna().astype(int).unique().tolist()
+            )
         except Exception:
             continue
 
-    full_data['HistoricalTeam'] = None
+        race_map = {}
+        for rnd in sorted(rounds):
+            try:
+                session = get_session(season, rnd, "R")
+                session.load()
+                df = pd.DataFrame(
+                    session.results.values, columns=session.results.columns
+                )
+                race_map[rnd] = df.set_index("DriverNumber")["TeamName"].to_dict()
+            except Exception:
+                continue
+
+        if race_map:
+            season_history[season] = race_map
+
+    full_data["HistoricalTeam"] = None
     for idx, row in full_data.iterrows():
-        season = row['Season']
-        driver_num = row['DriverNumber']
-        if season in seasons_drivers and driver_num in seasons_drivers[season]:
-            full_data.at[idx, 'HistoricalTeam'] = seasons_drivers[season][driver_num]
-        else:
-            full_data.at[idx, 'HistoricalTeam'] = 'Unknown Team'
+        season = row["Season"]
+        driver_num = row["DriverNumber"]
+        race_num = row.get("RaceNumber")
+
+        team = None
+        history = season_history.get(season)
+        if history and race_num is not None:
+            candidates = [r for r in history.keys() if r <= int(race_num)]
+            if candidates:
+                last_round = max(candidates)
+                team = history[last_round].get(driver_num)
+
+        if team is None and history:
+            first_round = min(history.keys())
+            team = history[first_round].get(driver_num)
+
+        full_data.at[idx, "HistoricalTeam"] = team if team is not None else "Unknown Team"
+
     return full_data
 
 
