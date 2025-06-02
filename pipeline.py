@@ -680,6 +680,17 @@ def _predict_with_existing_model(model, race_data, grand_prix, year):
 
 
 def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, event_day):
+    """Assemble a prediction input frame for a single event."""
+
+    # Some cached datasets from older versions dropped the "Month" column.
+    # Add it back if necessary so downstream aggregations do not fail.
+    if "Month" not in race_data.columns:
+        if "Date" in race_data.columns:
+            race_data = race_data.assign(
+                Month=pd.to_datetime(race_data["Date"], errors="coerce").dt.month
+            )
+        else:
+            race_data = race_data.assign(Month=np.nan)
     try:
         drivers_df = _get_qualifying_results(year, grand_prix)
         drivers_df = drivers_df[drivers_df["BestTime"].notna()]
