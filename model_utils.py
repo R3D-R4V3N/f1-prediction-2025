@@ -137,9 +137,17 @@ def _train_model(features, target, cv, debug=False):
                 early_stopping_rounds=20,
             )
             preds = model.predict(val_feat)
-            rho = spearmanr(target.iloc[val_idx].reset_index(drop=True), preds).correlation
+            rho = spearmanr(
+                target.iloc[val_idx].reset_index(drop=True), preds
+            ).correlation
+            if pd.isna(rho):
+                rho = -1.0
             scores.append(rho)
-        return mean(scores)
+
+        score = mean(scores)
+        if pd.isna(score):
+            score = -1.0
+        return score
 
     study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=60, show_progress_bar=False)
