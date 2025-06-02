@@ -8,7 +8,7 @@ from datetime import datetime
 from sklearn.metrics import mean_absolute_error
 
 from export_race_details import export_race_details
-from estimate_overtakes import average_overtakes
+from estimate_overtakes import overtakes_per_year
 from data_utils import (
     _load_historical_data,
     _clean_historical_data,
@@ -78,8 +78,8 @@ def predict_race(
     if compute_overtakes:
         try:
             years_for_avg = list(range(max(2022, year - 3), year))
-            avg = average_overtakes(grand_prix, years_for_avg)
-            overtake_map[grand_prix] = avg
+            per_year = overtakes_per_year(grand_prix, years_for_avg)
+            overtake_map.setdefault(grand_prix, {}).update(per_year)
         except Exception as err:
             logger.warning(
                 "Could not compute overtakes for %s: %s", grand_prix, err
@@ -211,7 +211,7 @@ def predict_race(
         default_air, default_track, default_rain = hist_air, hist_track, hist_rain
         default_fp3 = race_data['FP3BestTime'].mean()
         default_fp3_long = race_data['FP3LongRunTime'].mean()
-    default_overtake = race_data['WeightedAvgOvertakes'].mean()
+    default_overtake = race_data['Overtakes_CurrentYear'].mean()
 
     try:
         from fastf1.circuit_info import get_circuit_info
@@ -432,7 +432,7 @@ def predict_race(
             'AirTemp': default_air,
             'TrackTemp': default_track,
             'Rainfall': default_rain,
-            'WeightedAvgOvertakes': default_overtake,
+            'Overtakes_CurrentYear': default_overtake,
             'Team': d['Team'],
             'FullName': d['FullName'],
             'Abbreviation': d['Abbreviation']
@@ -735,7 +735,7 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
         default_air, default_track, default_rain = hist_air, hist_track, hist_rain
         default_fp3 = race_data["FP3BestTime"].mean()
         default_fp3_long = race_data["FP3LongRunTime"].mean()
-    default_overtake = race_data["WeightedAvgOvertakes"].mean()
+    default_overtake = race_data["Overtakes_CurrentYear"].mean()
 
     try:
         from fastf1.circuit_info import get_circuit_info
@@ -964,7 +964,7 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
                 "AirTemp": default_air,
                 "TrackTemp": default_track,
                 "Rainfall": default_rain,
-                "WeightedAvgOvertakes": default_overtake,
+                "Overtakes_CurrentYear": default_overtake,
                 "Team": d["Team"],
                 "FullName": d["FullName"],
                 "Abbreviation": d["Abbreviation"],

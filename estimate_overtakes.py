@@ -145,16 +145,18 @@ if __name__ == "__main__":
         "Weighted average overtakes at %s: %.1f", args.grand_prix, avg
     )
 
-    # Update or create the CSV used by the prediction model
     out_file = "overtake_stats.csv"
     try:
         df = pd.read_csv(out_file)
     except Exception:
-        df = pd.DataFrame(columns=["Circuit", "WeightedAvgOvertakes"])
+        df = pd.DataFrame(columns=["Circuit"])
 
     df = df[df["Circuit"] != args.grand_prix]
-    df = pd.concat(
-        [df, pd.DataFrame({"Circuit": [args.grand_prix], "WeightedAvgOvertakes": [avg]})],
-        ignore_index=True,
-    )
+
+    per_year = overtakes_per_year(args.grand_prix, args.years)
+    row = {"Circuit": args.grand_prix}
+    for yr, val in per_year.items():
+        row[f"Overtakes_{yr}"] = val
+
+    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     df.to_csv(out_file, index=False)
