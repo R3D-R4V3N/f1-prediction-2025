@@ -9,6 +9,7 @@ from scipy.stats import spearmanr
 from xgboost import XGBRanker, XGBRegressor, plot_importance
 import matplotlib.pyplot as plt
 import optuna
+from optuna.importance import get_param_importances
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 
@@ -139,12 +140,16 @@ def _train_model(features, target, cv, debug=False, use_regression=False):
     def objective(trial):
         params = {
             'n_estimators': 1000,
-            'learning_rate': trial.suggest_loguniform('learning_rate', 0.005, 0.2),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'subsample': trial.suggest_uniform('subsample', 0.5, 1.0),
-            'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0.5, 1.0),
-            'gamma': trial.suggest_loguniform('gamma', 1e-8, 1.0),
-            'min_child_weight': trial.suggest_int('min_child_weight', 0, 10),
+            'learning_rate': trial.suggest_loguniform('learning_rate', 0.003, 0.3),
+            'max_depth': trial.suggest_int('max_depth', 2, 12),
+            'subsample': trial.suggest_uniform('subsample', 0.4, 1.0),
+            'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0.4, 1.0),
+            'gamma': trial.suggest_loguniform('gamma', 1e-8, 10.0),
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 20),
+            'reg_alpha': trial.suggest_loguniform('reg_alpha', 1e-8, 1.0),
+            'reg_lambda': trial.suggest_loguniform('reg_lambda', 1e-8, 10.0),
+            'max_leaves': trial.suggest_int('max_leaves', 0, 256),
+            'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
         }
 
         model_choices = ['xgb_ranker']
@@ -226,7 +231,20 @@ def _train_model(features, target, cv, debug=False, use_regression=False):
         return score
 
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=60, show_progress_bar=False)
+    study.optimize(objective, n_trials=120, show_progress_bar=False)
+    os.makedirs("model_info", exist_ok=True)
+    try:
+        study.trials_dataframe().to_csv(
+            "model_info/hyperparameter_trials.csv", index=False
+        )
+    except Exception as err:  # pragma: no cover - optional dependency issues
+        logger.warning("Could not save trials dataframe: %s", err)
+    try:
+        importance = get_param_importances(study)
+        pd.Series(importance).to_csv("model_info/param_importances.csv")
+    except Exception as err:  # pragma: no cover - optional dependency issues
+        logger.warning("Could not compute param importances: %s", err)
+
     best_params = study.best_params
     best_score = study.best_value
     best_model_type = best_params.pop('model_type', 'xgb_ranker')
