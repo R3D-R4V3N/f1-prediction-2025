@@ -1,5 +1,5 @@
 import pytest
-import pandas as pd
+pd = pytest.importorskip("pandas")
 from data_utils import _prepare_features, _encode_features, race_cols
 
 def test_encoding_unknown_circuit_and_team():

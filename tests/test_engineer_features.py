@@ -1,5 +1,5 @@
 import pytest
-import pandas as pd
+pd = pytest.importorskip("pandas")
 from data_utils import _engineer_features
 
 def test_delta_and_cross_avg_and_rookie_flag():

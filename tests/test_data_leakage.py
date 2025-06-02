@@ -1,5 +1,5 @@
 import pytest
-import pandas as pd
+pd = pytest.importorskip("pandas")
 
 
 def test_data_leakage_filter():
