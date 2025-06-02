@@ -543,6 +543,7 @@ def predict_race(
         pred_rows.append({
             'GridPosition': grid_pos,
             'GridMissed': grid_missed,
+            "DriverNumber": driver_num,
             'Season': year,
             'ExperienceCount': exp_count,
             'IsRookie': 1 if exp_count == 1 else 0,
@@ -594,7 +595,8 @@ def predict_race(
 
     if pred_df.empty:
         raise ValueError(f"No driver data available for {year} {grand_prix}")
-
+    driver_sprint_mean = race_data.groupby("DriverNumber")["SprintFinish"].mean()
+    team_sprint_mean = race_data.groupby("HistoricalTeam")["SprintFinish"].mean()
     driver_sprint_mean = race_data.groupby("DriverNumber")["SprintFinish"].mean()
     team_sprint_mean = race_data.groupby("HistoricalTeam")["SprintFinish"].mean()
 
@@ -1148,6 +1150,7 @@ def _build_pred_df(
             {
                 "GridPosition": grid_pos,
                 "GridMissed": grid_missed,
+                "DriverNumber": driver_num,
                 "Season": year,
                 "ExperienceCount": exp_count,
                 "IsRookie": 1 if exp_count == 1 else 0,
