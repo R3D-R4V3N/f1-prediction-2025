@@ -494,15 +494,10 @@ def predict_race(
             dnfs = stats['DriverTrackDNFs']
 
         penalty = int(d.get('Penalty', 0))
-        grid_missed = 0
         if qual_results is not None and 'GridPosition' in d and pd.notna(d['GridPosition']):
-            grid_pos = int(d['GridPosition'])
+            grid_pos = int(d['GridPosition']) + penalty
             best_time = d['BestTime']
-            if d.get('StatusQuali') != 'Q3':
-                grid_pos = 20 + penalty
-                grid_missed = 1
-            else:
-                grid_pos += penalty
+            grid_missed = 1 if grid_pos > 20 else 0
         else:
             grid_pos = 20 + penalty
             best_time = default_best_q
@@ -1099,15 +1094,10 @@ def _build_pred_df(
             dnfs = stats["DriverTrackDNFs"]
 
         penalty = int(d.get("Penalty", 0))
-        grid_missed = 0
         if qual_results is not None and "GridPosition" in d and pd.notna(d["GridPosition"]):
-            grid_pos = int(d["GridPosition"])
+            grid_pos = int(d["GridPosition"]) + penalty
             best_time = d["BestTime"]
-            if d.get("StatusQuali") != "Q3":
-                grid_pos = 20 + penalty
-                grid_missed = 1
-            else:
-                grid_pos += penalty
+            grid_missed = 1 if grid_pos > 20 else 0
         else:
             grid_pos = 20 + penalty
             best_time = default_best_q
