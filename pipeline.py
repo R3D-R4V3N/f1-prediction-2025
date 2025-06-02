@@ -1017,7 +1017,33 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
 
 
 if __name__ == '__main__':
-    res = predict_race('Chinese Grand Prix', year=2025, export_details=True, debug=False)
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Predict F1 race results')
+    parser.add_argument(
+        '--grand_prix',
+        default='Chinese Grand Prix',
+        help='Grand Prix name (e.g. "Monaco Grand Prix")',
+    )
+    parser.add_argument(
+        '--year',
+        type=int,
+        default=2025,
+        help='Season year',
+    )
+    parser.add_argument(
+        '--retrain',
+        action='store_true',
+        help='Retrain the model instead of using a cached one',
+    )
+    args = parser.parse_args()
+
+    res = predict_race(
+        args.grand_prix,
+        year=args.year,
+        export_details=True,
+        retrain=args.retrain,
+    )
     logger.info(
         "\n%s",
         res[['Driver', 'Team', 'Grid', 'Final_Position']].head(),
