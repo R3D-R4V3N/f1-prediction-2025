@@ -83,6 +83,7 @@ def predict_race(
         model = pickle.load(open(cache_model_path, "rb"))
         if os.path.exists(cache_data_path):
             race_data = pd.read_parquet(cache_data_path)
+            safetycar_map = _load_safetycar_stats()
         else:
             seasons = list(range(2022, year + 1))
             overtake_map = _load_overtake_stats()
