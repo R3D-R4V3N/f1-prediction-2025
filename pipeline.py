@@ -623,7 +623,10 @@ def _predict_with_existing_model(model, race_data, grand_prix, year):
         circ_enc,
         top_circuits,
     )
-    race_pred_features = race_pred_features.reindex(columns=features.columns, fill_value=0)
+    expected_cols = getattr(model.get_booster(), "feature_names", None)
+    if expected_cols is None:
+        expected_cols = features.columns
+    race_pred_features = race_pred_features.reindex(columns=expected_cols, fill_value=0)
     preds = model.predict(race_pred_features)
 
     # Build the same result frame as during training
