@@ -16,6 +16,7 @@ from data_utils import (
     _engineer_features,
     _encode_features,
     _load_overtake_stats,
+    _load_safetycar_stats,
     _get_event_drivers,
     _get_qualifying_results,
     _get_fp3_results,
@@ -26,6 +27,8 @@ from data_utils import (
     GRAND_PRIX_LIST,
     race_cols,
     DELTA_NEXT_PENALTY,
+    SC_CORR_MAP,
+    SC_CORR_GLOBAL,
 )
 from model_utils import _train_model, _rank_metrics, SeasonSplit, CircuitSplit
 
@@ -82,16 +85,18 @@ def predict_race(
         else:
             seasons = list(range(2022, year + 1))
             overtake_map = _load_overtake_stats()
+            safetycar_map = _load_safetycar_stats()
             race_data = _load_historical_data(seasons, overtake_map, limit_rounds)
             race_data = _engineer_features(race_data)
             race_data.to_parquet(cache_data_path)
         logger.info("Loaded cached model and data for %s %d", grand_prix, year)
-        results = _predict_with_existing_model(model, race_data, grand_prix, year)
+        results = _predict_with_existing_model(model, race_data, grand_prix, year, safetycar_map)
         return (results, None) if debug else results
 
     seasons = list(range(2022, year + 1))
 
     overtake_map = _load_overtake_stats()
+    safetycar_map = _load_safetycar_stats()
     if compute_overtakes:
         try:
             years_for_avg = list(range(max(2022, year - 3), year))
@@ -570,6 +575,14 @@ def predict_race(
     circuit_rain = circ_rain_map.get(grand_prix, race_data['Rainfall'].median())
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(circuit_rain)
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(race_data['Rainfall'].median())
+
+    pred_df['SafetyCarAvg'] = pd.to_numeric(pred_df['SafetyCarAvg'], errors='coerce')
+    sc_avg = default_safetycar
+    pred_df['SafetyCarAvg'] = pred_df['SafetyCarAvg'].fillna(sc_avg)
+    pred_df['LikelihoodSC'] = pd.to_numeric(pred_df['LikelihoodSC'], errors='coerce')
+    pred_df['LikelihoodSC'] = pred_df['LikelihoodSC'].fillna(
+        SC_CORR_MAP.get(grand_prix, SC_CORR_GLOBAL)
+    )
     pred_df = pred_df.drop(columns=['Month'], errors='ignore')
 
     pred_df.to_csv("prediction_input.csv", index=False)
@@ -650,7 +663,7 @@ def predict_race(
     return (results, details) if debug else results
 
 
-def _predict_with_existing_model(model, race_data, grand_prix, year):
+def _predict_with_existing_model(model, race_data, grand_prix, year, safetycar_map):
     """Predict race results using a pre-trained model and cached data."""
     # Historical data may use either "Circuit" or legacy "GrandPrix" for the
     # event name. Support both to avoid KeyError when only one exists.
@@ -684,6 +697,7 @@ def _predict_with_existing_model(model, race_data, grand_prix, year):
         this_race_number,
         event_month,
         event_day,
+        safetycar_map,
     )
 
     features, team_enc, circ_enc, top_circuits = _encode_features(race_data, race_cols)
@@ -713,7 +727,15 @@ def _predict_with_existing_model(model, race_data, grand_prix, year):
     return results
 
 
-def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, event_day):
+def _build_pred_df(
+    race_data,
+    grand_prix,
+    year,
+    this_race_number,
+    event_month,
+    event_day,
+    safetycar_map,
+):
     """Assemble a prediction input frame for a single event."""
 
     # Some cached datasets from older versions dropped the "Month" column.
@@ -805,6 +827,10 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
         default_fp3 = race_data["FP3BestTime"].mean()
         default_fp3_long = race_data["FP3LongRunTime"].mean()
     default_overtake = race_data["Overtakes_CurrentYear"].mean()
+    sc_vals = [v for d in safetycar_map.values() for v in d.values()]
+    global_sc = float(np.mean(sc_vals)) if sc_vals else np.nan
+    circ_sc_vals = safetycar_map.get(grand_prix, {})
+    default_safetycar = float(np.mean(list(circ_sc_vals.values()))) if circ_sc_vals else global_sc
 
     try:
         from fastf1.circuit_info import get_circuit_info
@@ -1038,6 +1064,8 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
                 "TrackTemp": default_track,
                 "Rainfall": default_rain,
                 "Overtakes_CurrentYear": default_overtake,
+                "SafetyCarAvg": default_safetycar,
+                "LikelihoodSC": SC_CORR_MAP.get(grand_prix, SC_CORR_GLOBAL),
                 "Team": d["Team"],
                 "FullName": d["FullName"],
                 "Abbreviation": d["Abbreviation"],

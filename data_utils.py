@@ -220,7 +220,60 @@ def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
     return stats
 
 
+def _load_safetycar_stats(path: str = "safetycar_stats.csv") -> dict:
+    """Return safety car lap counts per circuit per season."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {}
+
+    if df.empty or "Circuit" not in df.columns:
+        return {}
+
+    stats = {}
+    for _, row in df.iterrows():
+        circ = row["Circuit"]
+        year_cols = [c for c in df.columns if c.startswith("SafetyCar_")]
+        year_map = {}
+        for col in year_cols:
+            try:
+                yr = int(col.split("_")[1])
+            except Exception:
+                continue
+            val = pd.to_numeric(row[col], errors="coerce")
+            if not pd.isna(val):
+                year_map[yr] = float(val)
+        if year_map:
+            stats[circ] = year_map
+    return stats
+
+
 OVERTAKE_AVERAGES = _load_overtake_stats()
+SAFETY_CAR_STATS = _load_safetycar_stats()
+
+def _compute_sc_correlation(overtake_stats, safety_stats):
+    """Return per-circuit correlation of overtakes and safety car laps."""
+    corr_map = {}
+    vals = []
+    for circ, sc_years in safety_stats.items():
+        ov_years = overtake_stats.get(circ)
+        if not ov_years:
+            continue
+        years = [y for y in sc_years if y in ov_years]
+        if len(years) < 2:
+            continue
+        ov = [ov_years[y] for y in years]
+        sc = [sc_years[y] for y in years]
+        corr = float(np.corrcoef(ov, sc)[0, 1])
+        if not np.isnan(corr):
+            corr_map[circ] = corr
+            vals.append(corr)
+    global_corr = float(np.mean(vals)) if vals else 0.0
+    return corr_map, global_corr
+
+SC_CORR_MAP, SC_CORR_GLOBAL = _compute_sc_correlation(OVERTAKE_AVERAGES, SAFETY_CAR_STATS)
 
 GRAND_PRIX_LIST = [
     'Bahrain Grand Prix',
@@ -321,7 +374,8 @@ race_cols = [
     'TeamReliability', 'DriverSeasonDNFs', 'TeamSeasonDNFs', 'TeamTier_0', 'TeamTier_1',
     'TeamTier_2', 'TeamTier_3', 'CircuitLength', 'NumCorners',
     'DRSZones', 'StdLapTime', 'IsStreet', 'DownforceLevel',
-    'Overtakes_CurrentYear', 'CircuitEmbed1', 'CircuitEmbed2'
+    'Overtakes_CurrentYear', 'CircuitEmbed1', 'CircuitEmbed2',
+    'SafetyCarAvg', 'LikelihoodSC'
 ]
 
 
@@ -974,6 +1028,16 @@ def _engineer_features(full_data):
     circuit_rain = full_data.groupby('Circuit')['Rainfall'].transform('median')
     full_data['Rainfall'] = full_data['Rainfall'].fillna(circuit_rain)
     full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
+
+    def _sc_lookup(row):
+        return SAFETY_CAR_STATS.get(row['Circuit'], {}).get(row['Season'])
+
+    if 'SafetyCarAvg' not in full_data.columns:
+        full_data['SafetyCarAvg'] = full_data.apply(_sc_lookup, axis=1)
+    sc_mean_circ = full_data.groupby('Circuit')['SafetyCarAvg'].transform('mean')
+    full_data['SafetyCarAvg'] = full_data['SafetyCarAvg'].fillna(sc_mean_circ)
+    full_data['SafetyCarAvg'] = full_data['SafetyCarAvg'].fillna(full_data['SafetyCarAvg'].mean())
+    full_data['LikelihoodSC'] = full_data['Circuit'].map(SC_CORR_MAP).fillna(SC_CORR_GLOBAL)
     # Retain the ``Month`` column for downstream processing. ``Date`` is no
     # longer needed once the month has been extracted, so drop only that
     # column.  Keeping ``Month`` allows other parts of the pipeline to
@@ -1008,6 +1072,8 @@ def _engineer_features(full_data):
     full_data['StdLapTime'] = full_data['StdLapTime'].fillna(full_data['StdLapTime'].mean())
     full_data['CircuitEmbed1'] = full_data['CircuitEmbed1'].fillna(full_data['CircuitEmbed1'].mean())
     full_data['CircuitEmbed2'] = full_data['CircuitEmbed2'].fillna(full_data['CircuitEmbed2'].mean())
+    full_data['SafetyCarAvg'] = full_data['SafetyCarAvg'].fillna(full_data['SafetyCarAvg'].mean())
+    full_data['LikelihoodSC'] = full_data['LikelihoodSC'].fillna(SC_CORR_GLOBAL)
     full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
     full_data['ConstructorChampPoints'] = full_data['ConstructorChampPoints'].fillna(0)
     full_data['DriverStanding'] = full_data['DriverStanding'].fillna(full_data['DriverStanding'].max())
@@ -1225,7 +1291,11 @@ __all__ = [
     '_get_fp3_results',
     '_get_sprint_results',
     '_load_overtake_stats',
+    '_load_safetycar_stats',
     'OVERTAKE_AVERAGES',
+    'SAFETY_CAR_STATS',
+    'SC_CORR_MAP',
+    'SC_CORR_GLOBAL',
     'GRAND_PRIX_LIST',
     'CIRCUIT_METADATA',
     'CIRCUIT_COORDS',

@@ -29,3 +29,4 @@ def test_delta_and_cross_avg_and_rookie_flag():
     assert "Month" in out.columns
     assert "DriverSeasonDNFs" in out.columns
     assert "TeamSeasonDNFs" in out.columns
+    assert "SafetyCarAvg" in out.columns
