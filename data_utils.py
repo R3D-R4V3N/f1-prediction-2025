@@ -9,6 +9,7 @@ from numpy import nan, mean, where
 import pandas as pd
 from pandas import DataFrame, Series, to_numeric, to_timedelta, read_csv
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.decomposition import PCA
 
 from export_race_details import _fetch_session_data
 
@@ -320,7 +321,7 @@ race_cols = [
     'TeamReliability', 'DriverSeasonDNFs', 'TeamSeasonDNFs', 'TeamTier_0', 'TeamTier_1',
     'TeamTier_2', 'TeamTier_3', 'CircuitLength', 'NumCorners',
     'DRSZones', 'StdLapTime', 'IsStreet', 'DownforceLevel',
-    'Overtakes_CurrentYear'
+    'Overtakes_CurrentYear', 'CircuitEmbed1', 'CircuitEmbed2'
 ]
 
 
@@ -917,6 +918,26 @@ def _engineer_features(full_data):
         full_data['StdLapTime'] = full_data['Circuit'].map(
             lambda c: CIRCUIT_METADATA.get(c, {}).get('StdLapTime', nan)
         )
+    # Compute circuit embeddings using PCA on metadata
+    meta_cols = ['NumCorners', 'DRSZones', 'StdLapTime']
+    meta_df = (
+        full_data[['Circuit'] + meta_cols]
+        .drop_duplicates('Circuit')
+        .dropna()
+        .set_index('Circuit')
+    )
+    if not meta_df.empty:
+        pca = PCA(n_components=2)
+        emb = pca.fit_transform(meta_df[meta_cols])
+        embed_df = pd.DataFrame(
+            emb, index=meta_df.index, columns=['CircuitEmbed1', 'CircuitEmbed2']
+        )
+        full_data = full_data.merge(
+            embed_df, left_on='Circuit', right_index=True, how='left'
+        )
+    else:
+        full_data['CircuitEmbed1'] = nan
+        full_data['CircuitEmbed2'] = nan
     TRACK_TYPE = {
         'Monaco Grand Prix': 'street',
         'Singapore Grand Prix': 'street',
@@ -985,6 +1006,8 @@ def _engineer_features(full_data):
     full_data['NumCorners'] = full_data['NumCorners'].fillna(full_data['NumCorners'].median())
     full_data['DRSZones'] = full_data['DRSZones'].fillna(full_data['DRSZones'].median())
     full_data['StdLapTime'] = full_data['StdLapTime'].fillna(full_data['StdLapTime'].mean())
+    full_data['CircuitEmbed1'] = full_data['CircuitEmbed1'].fillna(full_data['CircuitEmbed1'].mean())
+    full_data['CircuitEmbed2'] = full_data['CircuitEmbed2'].fillna(full_data['CircuitEmbed2'].mean())
     full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
     full_data['ConstructorChampPoints'] = full_data['ConstructorChampPoints'].fillna(0)
     full_data['DriverStanding'] = full_data['DriverStanding'].fillna(full_data['DriverStanding'].max())
