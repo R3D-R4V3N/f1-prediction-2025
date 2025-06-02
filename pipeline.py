@@ -19,6 +19,7 @@ from data_utils import (
     _get_event_drivers,
     _get_qualifying_results,
     _get_fp3_results,
+    _get_sprint_results,
     _season_driver_team_stats,
     fetch_weather,
     CIRCUIT_METADATA,
@@ -407,7 +408,8 @@ def predict_race(
             'FP3LongRunTime': fp3_long_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
             'DeltaToNext': d.get('DeltaToNext', default_delta_next),
-            'SprintFinish': 25,
+            'SprintFinish': d.get('SprintFinish'),
+            'HasSprint': 1 if has_sprint else 0,
             'Recent3AvgFinish': recent3_avg,
             'Recent5AvgFinish': recent5_avg,
             'DriverAvgTrackFinish': avg_track,
@@ -441,6 +443,9 @@ def predict_race(
     if pred_df.empty:
         raise ValueError(f"No driver data available for {year} {grand_prix}")
 
+    driver_sprint_mean = race_data.groupby("DriverNumber")["SprintFinish"].mean()
+    team_sprint_mean = race_data.groupby("HistoricalTeam")["SprintFinish"].mean()
+
     pred_df['GridPosition'] = (
         pd.to_numeric(pred_df['GridPosition'], errors='coerce')
         .fillna(20)
@@ -459,10 +464,18 @@ def predict_race(
         pd.to_numeric(pred_df['FP3LongRunTime'], errors='coerce')
         .fillna(race_data['FP3LongRunTime'].mean())
     )
-    pred_df['SprintFinish'] = (
-        pd.to_numeric(pred_df.get('SprintFinish'), errors='coerce')
-        .fillna(25)
+    pred_df['SprintFinish'] = pd.to_numeric(pred_df.get('SprintFinish'), errors='coerce')
+    pred_df['HasSprint'] = pred_df['HasSprint'].fillna(0).astype(int)
+    pred_df['SprintFinish'] = pred_df.apply(
+        lambda r: driver_sprint_mean.get(r['DriverNumber']) if pd.isna(r['SprintFinish']) else r['SprintFinish'],
+        axis=1
     )
+    pred_df['SprintFinish'] = pred_df.apply(
+        lambda r: team_sprint_mean.get(r['Team']) if pd.isna(r['SprintFinish']) else r['SprintFinish'],
+        axis=1
+    )
+    pred_df['SprintFinish'] = pred_df['SprintFinish'].fillna(race_data['SprintFinish'].mean())
+    pred_df['SprintFinish'] = pred_df['SprintFinish'].clip(1, 20)
     pred_df['NumCorners'] = (
         pd.to_numeric(pred_df['NumCorners'], errors='coerce')
         .fillna(race_data['NumCorners'].median())
@@ -670,6 +683,16 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
             qual_results = qual_results.merge(fp3_results, on="Abbreviation", how="left")
     except Exception:
         fp3_results = None
+
+    try:
+        sprint_results = _get_sprint_results(year, grand_prix)
+        has_sprint = not sprint_results.empty
+        if qual_results is not None:
+            qual_results = qual_results.merge(sprint_results, on="Abbreviation", how="left")
+        drivers_df = drivers_df.merge(sprint_results, on="Abbreviation", how="left")
+    except Exception:
+        sprint_results = pd.DataFrame()
+        has_sprint = False
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results["BestTime"].median()
@@ -917,7 +940,8 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
                 "FP3LongRunTime": fp3_long_time,
                 "DeltaToBestQuali": d.get("DeltaToBestQuali", 0),
                 "DeltaToNext": d.get("DeltaToNext", default_delta_next),
-                "SprintFinish": 25,
+                "SprintFinish": d.get("SprintFinish"),
+                "HasSprint": 1 if has_sprint else 0,
                 "Recent3AvgFinish": recent3_avg,
                 "Recent5AvgFinish": recent5_avg,
                 "DriverAvgTrackFinish": avg_track,
@@ -969,9 +993,18 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
             race_data["FP3LongRunTime"].mean()
         )
     )
-    pred_df["SprintFinish"] = (
-        pd.to_numeric(pred_df.get("SprintFinish"), errors="coerce").fillna(25)
+    pred_df["SprintFinish"] = pd.to_numeric(pred_df.get("SprintFinish"), errors="coerce")
+    pred_df["HasSprint"] = pred_df["HasSprint"].fillna(0).astype(int)
+    pred_df["SprintFinish"] = pred_df.apply(
+        lambda r: driver_sprint_mean.get(r["DriverNumber"]) if pd.isna(r["SprintFinish"]) else r["SprintFinish"],
+        axis=1,
     )
+    pred_df["SprintFinish"] = pred_df.apply(
+        lambda r: team_sprint_mean.get(r["Team"]) if pd.isna(r["SprintFinish"]) else r["SprintFinish"],
+        axis=1,
+    )
+    pred_df["SprintFinish"] = pred_df["SprintFinish"].fillna(race_data["SprintFinish"].mean())
+    pred_df["SprintFinish"] = pred_df["SprintFinish"].clip(1, 20)
     pred_df["NumCorners"] = (
         pd.to_numeric(pred_df["NumCorners"], errors="coerce").fillna(
             race_data["NumCorners"].median()

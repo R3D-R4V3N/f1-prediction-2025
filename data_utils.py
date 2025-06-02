@@ -147,6 +147,25 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
     ]
 
 
+def _get_sprint_results(year: int, grand_prix: str) -> pd.DataFrame:
+    """Return sprint finish positions for the given event."""
+    schedule = get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
+
+    round_number = int(match.iloc[0]["RoundNumber"])
+    try:
+        session = get_session(year, round_number, "S")
+        session.load()
+        sdf = pd.DataFrame(session.results.values, columns=session.results.columns)
+        return sdf[["DriverNumber", "Abbreviation", "Position"]].rename(
+            columns={"Position": "SprintFinish"}
+        )
+    except Exception:
+        return pd.DataFrame(columns=["DriverNumber", "Abbreviation", "SprintFinish"])
+
+
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
     """Return weighted average overtake counts mapped by circuit name."""
     if not os.path.exists(path):
@@ -251,6 +270,7 @@ race_cols = [
     'FP3BestTime', 'FP3LongRunTime',
     'AirTemp', 'TrackTemp', 'Rainfall', 'MissedQuali',
     'SprintFinish', 'CrossAvgFinish', 'RecentAvgPoints',
+    'HasSprint',
     'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
     'DriverTrackPodiums', 'DriverTrackDNFs', 'IsRookie',
     'PrevYearConstructorRank', 'TeamRecentQuali', 'TeamRecentFinish',
@@ -538,8 +558,17 @@ def _engineer_features(full_data):
         full_data.get('SprintFinish', pd.Series(nan, index=full_data.index)),
         errors='coerce'
     )
-    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(25)
-    full_data['SprintFinish'] = full_data['SprintFinish'].clip(1, 25)
+    full_data['HasSprint'] = full_data['SprintFinish'].notna().astype(int)
+    driver_avg_sprint = full_data.groupby('DriverNumber')['SprintFinish'].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    team_avg_sprint = full_data.groupby('HistoricalTeam')['SprintFinish'].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(driver_avg_sprint)
+    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(team_avg_sprint)
+    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(full_data['SprintFinish'].mean())
+    full_data['SprintFinish'] = full_data['SprintFinish'].clip(1, 20)
     if 'GridDropCount' in full_data.columns:
         full_data['GridDropCount'] = pd.to_numeric(full_data['GridDropCount'], errors='coerce').fillna(0)
     else:
@@ -805,7 +834,8 @@ def _engineer_features(full_data):
         full_data['BestQualiTime'].median())
     full_data['FP3BestTime'] = full_data['FP3BestTime'].fillna(full_data['FP3BestTime'].mean())
     full_data['FP3LongRunTime'] = full_data['FP3LongRunTime'].fillna(full_data['FP3LongRunTime'].mean())
-    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(25)
+    full_data['SprintFinish'] = full_data['SprintFinish'].fillna(full_data['SprintFinish'].mean())
+    full_data['HasSprint'] = full_data['HasSprint'].fillna(0)
     full_data['IsStreet'] = full_data['IsStreet'].fillna(0)
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
@@ -829,7 +859,7 @@ def _engineer_features(full_data):
 
     required_columns = [
         'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
-        'MissedQuali', 'SprintFinish', 'FP3LongRunTime'
+        'MissedQuali', 'SprintFinish', 'HasSprint', 'FP3LongRunTime'
     ]
     for col in required_columns:
         if col not in full_data.columns:
@@ -1031,6 +1061,7 @@ __all__ = [
     '_get_event_drivers',
     '_get_qualifying_results',
     '_get_fp3_results',
+    '_get_sprint_results',
     '_load_overtake_stats',
     'OVERTAKE_AVERAGES',
     'GRAND_PRIX_LIST',
