@@ -673,10 +673,18 @@ def _predict_with_existing_model(model, race_data, grand_prix, year):
     )
     race_pred_features = race_pred_features.reindex(columns=features.columns, fill_value=0)
     preds = model.predict(race_pred_features)
-    results = pred_df[["Driver", "Team", "GridPosition"]].copy()
-    results["Predicted_Position"] = preds
-    results["Final_Position"] = results["Predicted_Position"].rank(method="first")
-    return results.sort_values("Final_Position")
+
+    # Build the same result frame as during training
+    results = pd.DataFrame({
+        "Driver": pred_df["Abbreviation"],
+        "Team": pred_df["Team"],
+        "Grid": pred_df["GridPosition"],
+        "Predicted_Position": preds,
+    })
+    sort_idx = results["Predicted_Position"].argsort()
+    results = results.iloc[sort_idx].reset_index(drop=True)
+    results["Final_Position"] = range(1, len(results) + 1)
+    return results
 
 
 def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, event_day):
