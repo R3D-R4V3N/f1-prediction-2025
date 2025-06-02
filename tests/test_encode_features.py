@@ -36,7 +36,7 @@ def test_encoding_unknown_circuit_and_team():
         "TeamTier_0": [0], "TeamTier_1": [0], "TeamTier_2": [1], "TeamTier_3": [0],
         "CircuitLength": [5.424], "NumCorners": [19], "DRSZones": [2],
         "StdLapTime": [98.5], "IsStreet": [0], "DownforceLevel": [1],
-        "WeightedAvgOvertakes": [30.0],
+        "Overtakes_CurrentYear": [30.0],
         "HistoricalTeam": ["ImaginaryRacers"],
         "Circuit": ["Neverland GP"],
     })
