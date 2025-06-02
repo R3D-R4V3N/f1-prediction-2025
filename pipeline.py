@@ -4,6 +4,7 @@ import fastf1
 import logging
 import os
 import pickle
+import matplotlib.pyplot as plt
 from datetime import datetime
 from sklearn.metrics import mean_absolute_error
 
@@ -154,6 +155,74 @@ def predict_race(
         ho_preds = ho_model.predict(ho_val_feat)
         holdout_mae = mean_absolute_error(holdout_df['Position'], ho_preds)
         holdout_rank = _rank_metrics(holdout_df['Position'], ho_preds)
+
+        holdout_df = holdout_df.copy()
+        holdout_df['Pred'] = ho_preds
+        holdout_df['GridQuartile'] = pd.qcut(holdout_df['GridPosition'], 4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+
+        team_stats = holdout_df.groupby('HistoricalTeam').apply(
+            lambda g: pd.Series({
+                'mae': mean_absolute_error(g['Position'], g['Pred']),
+                'pred_mean': g['Pred'].mean(),
+                'actual_mean': g['Position'].mean(),
+            })
+        )
+        grid_stats = holdout_df.groupby('GridQuartile').apply(
+            lambda g: pd.Series({
+                'mae': mean_absolute_error(g['Position'], g['Pred']),
+                'pred_mean': g['Pred'].mean(),
+                'actual_mean': g['Position'].mean(),
+            })
+        )
+
+        team_bias = (team_stats['actual_mean'] - team_stats['pred_mean']).to_dict()
+        grid_bias = (grid_stats['actual_mean'] - grid_stats['pred_mean']).to_dict()
+
+        from sklearn.isotonic import IsotonicRegression
+        iso = IsotonicRegression(out_of_bounds='clip')
+        iso.fit(ho_preds, holdout_df['Position'])
+        iso_preds = iso.predict(ho_preds)
+        calib_mae = mean_absolute_error(holdout_df['Position'], iso_preds)
+
+        logger.info("Hold-out calibration MAE: %.2f", calib_mae)
+        logger.info("Team bias: %s", team_bias)
+        logger.info("Grid quartile bias: %s", grid_bias)
+
+        if debug:
+            os.makedirs('model_info', exist_ok=True)
+            (holdout_df.groupby('HistoricalTeam')['Pred'].mean() -
+             holdout_df.groupby('HistoricalTeam')['Position'].mean()).sort_values().plot(kind='bar', color='skyblue')
+            plt.axhline(0, color='k', linewidth=0.8)
+            plt.ylabel('Bias (Pred - Actual)')
+            plt.title('Team Bias')
+            plt.tight_layout()
+            plt.savefig('model_info/team_bias.png')
+            plt.close()
+
+            (holdout_df.groupby('GridQuartile')['Pred'].mean() -
+             holdout_df.groupby('GridQuartile')['Position'].mean()).sort_index().plot(kind='bar', color='salmon')
+            plt.axhline(0, color='k', linewidth=0.8)
+            plt.ylabel('Bias (Pred - Actual)')
+            plt.title('Grid Quartile Bias')
+            plt.tight_layout()
+            plt.savefig('model_info/grid_bias.png')
+            plt.close()
+
+            plt.figure(figsize=(6, 4))
+            plt.scatter(ho_preds, holdout_df['Position'], alpha=0.7, s=20, label='raw')
+            xs = pd.Series(sorted(ho_preds))
+            plt.plot(xs, iso.predict(xs), color='red', label='isotonic')
+            plt.xlabel('Predicted')
+            plt.ylabel('Actual')
+            plt.title('Isotonic Calibration')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig('model_info/isotonic_calibration.png')
+            plt.close()
+
+        holdout_rank['team_bias'] = team_bias
+        holdout_rank['grid_bias'] = grid_bias
+        holdout_rank['calibrated_mae'] = calib_mae
     (
         features,
         team_enc,
@@ -631,6 +700,11 @@ def predict_race(
             'prediction_features': pred_features,
             'shap_values': shap_values,
             'feature_names': pred_features.columns.tolist(),
+            'holdout_team_mae': team_stats['mae'].to_dict() if 'team_stats' in locals() else {},
+            'holdout_grid_mae': grid_stats['mae'].to_dict() if 'grid_stats' in locals() else {},
+            'holdout_team_bias': team_bias if 'team_bias' in locals() else {},
+            'holdout_grid_bias': grid_bias if 'grid_bias' in locals() else {},
+            'holdout_calibrated_mae': calib_mae if 'calib_mae' in locals() else None,
         }
 
     if holdout_mae is not None:
