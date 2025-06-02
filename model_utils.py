@@ -6,10 +6,18 @@ import pickle
 from numpy import mean, ndarray
 import pandas as pd
 from scipy.stats import spearmanr
-from xgboost import XGBRanker, plot_importance
+from xgboost import XGBRanker, XGBRegressor, plot_importance
 import matplotlib.pyplot as plt
 import optuna
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
+
+try:
+    from lightgbm import LGBMRanker
+    import lightgbm as lgb
+    HAS_LIGHTGBM = True
+except Exception:  # pragma: no cover - optional dependency
+    HAS_LIGHTGBM = False
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +123,21 @@ def _rank_metrics(actual: pd.Series, preds: ndarray) -> dict:
     return {"spearman": rho, "top1": top1, "top3": top3}
 
 
-def _train_model(features, target, cv, debug=False):
-    """Train an XGBoost ranker using Bayesian optimisation."""
+def _train_model(features, target, cv, debug=False, use_regression=False):
+    """Train a ranking/regression model using Bayesian optimisation.
+
+    When ``use_regression`` is ``True`` the optimisation considers both
+    ``XGBRanker`` and ``XGBRegressor`` objectives (and ``LGBMRanker`` if
+    available). Trials are scored using a weighted combination of Spearman
+    correlation and mean absolute error. Otherwise only ``XGBRanker`` is used
+    and the score is the rank correlation alone.
+    """
+    max_mae = target.max() - target.min()
+    if max_mae <= 0:
+        max_mae = 1.0
+
     def objective(trial):
         params = {
-            # use a large number of estimators and rely on early stopping to find the best value
             'n_estimators': 1000,
             'learning_rate': trial.suggest_loguniform('learning_rate', 0.005, 0.2),
             'max_depth': trial.suggest_int('max_depth', 3, 10),
@@ -128,35 +146,79 @@ def _train_model(features, target, cv, debug=False):
             'gamma': trial.suggest_loguniform('gamma', 1e-8, 1.0),
             'min_child_weight': trial.suggest_int('min_child_weight', 0, 10),
         }
-        model = XGBRanker(objective="rank:pairwise", random_state=42, **params)
+
+        model_choices = ['xgb_ranker']
+        if use_regression:
+            model_choices.append('xgb_regressor')
+        if HAS_LIGHTGBM:
+            model_choices.append('lgb_ranker')
+
+        model_type = trial.suggest_categorical('model_type', model_choices)
+
+        if model_type == 'lgb_ranker':
+            params_lgb = {
+                'num_leaves': trial.suggest_int('num_leaves', 15, 63),
+                'min_child_samples': trial.suggest_int('min_child_samples', 5, 20),
+            }
+            model = LGBMRanker(objective='lambdarank', random_state=42,
+                               **params_lgb, n_estimators=params['n_estimators'],
+                               learning_rate=params['learning_rate'])
+        elif model_type == 'xgb_regressor':
+            model = XGBRegressor(objective='reg:squarederror', random_state=42, **params)
+        else:
+            model = XGBRanker(objective='rank:pairwise', random_state=42, **params)
+
         scores = []
-        splits = cv.split(features) if hasattr(cv, "split") else cv
+        splits = cv.split(features) if hasattr(cv, 'split') else cv
         for train_idx, val_idx in splits:
             train_feat = features.iloc[train_idx].reset_index(drop=True)
             val_feat = features.iloc[val_idx].reset_index(drop=True)
-            train_groups = (
-                train_feat.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
-            )
-            val_groups = (
-                val_feat.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
-            )
-            _fit_xgb_ranker(
-                model,
-                train_feat,
-                target.iloc[train_idx].reset_index(drop=True),
-                group=train_groups,
-                eval_set=[(val_feat, target.iloc[val_idx].reset_index(drop=True))],
-                eval_group=[val_groups],
-                verbose=False,
-                early_stopping_rounds=20,
-            )
+            y_train = target.iloc[train_idx].reset_index(drop=True)
+            y_val = target.iloc[val_idx].reset_index(drop=True)
+
+            if model_type == 'xgb_ranker':
+                train_groups = train_feat.groupby(['Season', 'RaceNumber'], sort=False).size().to_list()
+                val_groups = val_feat.groupby(['Season', 'RaceNumber'], sort=False).size().to_list()
+                _fit_xgb_ranker(
+                    model,
+                    train_feat,
+                    y_train,
+                    group=train_groups,
+                    eval_set=[(val_feat, y_val)],
+                    eval_group=[val_groups],
+                    verbose=False,
+                    early_stopping_rounds=20,
+                )
+            elif model_type == 'xgb_regressor':
+                model.fit(
+                    train_feat,
+                    y_train,
+                    eval_set=[(val_feat, y_val)],
+                    early_stopping_rounds=20,
+                    verbose=False,
+                )
+            else:  # lgb_ranker
+                train_groups = train_feat.groupby(['Season', 'RaceNumber'], sort=False).size().to_list()
+                val_groups = val_feat.groupby(['Season', 'RaceNumber'], sort=False).size().to_list()
+                model.fit(
+                    train_feat,
+                    y_train,
+                    group=train_groups,
+                    eval_set=[(val_feat, y_val)],
+                    eval_group=[val_groups],
+                    callbacks=[lgb.early_stopping(20)],
+                )
+
             preds = model.predict(val_feat)
-            rho = spearmanr(
-                target.iloc[val_idx].reset_index(drop=True), preds
-            ).correlation
+            rho = spearmanr(y_val, preds).correlation
+            mae = mean_absolute_error(y_val, preds)
             if pd.isna(rho):
                 rho = -1.0
-            scores.append(rho)
+            if use_regression:
+                score = 0.7 * rho + 0.3 * (1 - mae / max_mae)
+            else:
+                score = rho
+            scores.append(score)
 
         score = mean(scores)
         if pd.isna(score):
@@ -167,6 +229,7 @@ def _train_model(features, target, cv, debug=False):
     study.optimize(objective, n_trials=60, show_progress_bar=False)
     best_params = study.best_params
     best_score = study.best_value
+    best_model_type = best_params.pop('model_type', 'xgb_ranker')
 
     X_full_train, X_dev, y_full_train, y_dev = train_test_split(
         features, target, test_size=0.05, shuffle=False
@@ -174,37 +237,73 @@ def _train_model(features, target, cv, debug=False):
     group_full_train = build_group_list(X_full_train)
     group_dev = build_group_list(X_dev)
 
-    model = XGBRanker(objective="rank:pairwise", random_state=42, **best_params)
-    _fit_xgb_ranker(
-        model,
-        X_full_train,
-        y_full_train,
-        group=group_full_train,
-        eval_set=[(X_dev, y_dev)],
-        eval_group=[group_dev],
-        early_stopping_rounds=20,
-        verbose=False,
-    )
-    best_iter = None
-    for attr in ("best_iteration", "best_iteration_", "best_ntree_limit"):
-        if hasattr(model, attr):
-            best_iter = getattr(model, attr)
-            break
-    if best_iter is None:
-        best_iter = model.n_estimators
+    if best_model_type == 'xgb_regressor':
+        model = XGBRegressor(objective='reg:squarederror', random_state=42, **best_params)
+        model.fit(
+            X_full_train,
+            y_full_train,
+            eval_set=[(X_dev, y_dev)],
+            early_stopping_rounds=20,
+            verbose=False,
+        )
+        best_iter = getattr(model, 'best_iteration', getattr(model, 'best_ntree_limit', model.n_estimators))
+        model = XGBRegressor(
+            objective='reg:squarederror',
+            random_state=42,
+            **best_params,
+            n_estimators=best_iter,
+        )
+        model.fit(features, target, verbose=False)
+    elif best_model_type == 'lgb_ranker':
+        model = LGBMRanker(objective='lambdarank', random_state=42, **best_params)
+        model.fit(
+            X_full_train,
+            y_full_train,
+            group=group_full_train,
+            eval_set=[(X_dev, y_dev)],
+            eval_group=[group_dev],
+            callbacks=[lgb.early_stopping(20)],
+        )
+        best_iter = getattr(model, 'best_iteration_', getattr(model, 'best_iteration', model.n_estimators))
+        model = LGBMRanker(
+            objective='lambdarank',
+            random_state=42,
+            **best_params,
+            n_estimators=best_iter,
+        )
+        model.fit(features, target, group=build_group_list(features))
+    else:
+        model = XGBRanker(objective='rank:pairwise', random_state=42, **best_params)
+        _fit_xgb_ranker(
+            model,
+            X_full_train,
+            y_full_train,
+            group=group_full_train,
+            eval_set=[(X_dev, y_dev)],
+            eval_group=[group_dev],
+            early_stopping_rounds=20,
+            verbose=False,
+        )
+        best_iter = None
+        for attr in ('best_iteration', 'best_iteration_', 'best_ntree_limit'):
+            if hasattr(model, attr):
+                best_iter = getattr(model, attr)
+                break
+        if best_iter is None:
+            best_iter = model.n_estimators
 
-    model = XGBRanker(
-        objective="rank:pairwise",
-        random_state=42,
-        **best_params,
-        n_estimators=best_iter,
-    )
-    model.fit(
-        features,
-        target,
-        group=build_group_list(features),
-        verbose=False,
-    )
+        model = XGBRanker(
+            objective='rank:pairwise',
+            random_state=42,
+            **best_params,
+            n_estimators=best_iter,
+        )
+        model.fit(
+            features,
+            target,
+            group=build_group_list(features),
+            verbose=False,
+        )
 
     if debug:
         plt.figure(figsize=(10, 8))

@@ -4,7 +4,7 @@ This repository contains tools to predict the outcome of Formula&nbsp;1 races in
 
 ## Features
 
-- **Race prediction** using a single XGBoost model.
+- **Race prediction** using XGBoost or LightGBM models.
 - **Automatic team and driver handling** for 2025 line‑ups, including rookies.
 - **Weather and circuit statistics** such as air/track temperature and estimated overtakes per circuit.
 - **Live weather forecasts** blended with historical averages when an `OPENWEATHER_API_KEY` is provided.
@@ -97,12 +97,18 @@ Downloads FP3, qualifying and race information for every scheduled event in 2025
 ## Evaluation Metrics
 
 The training routine optimises **Spearman rank correlation** on finishing order
-using ``XGBRanker`` with a pairwise ranking objective. During training and
-hold-out evaluation the script also reports:
+using ``XGBRanker`` by default. When ``use_regression=True`` the optimiser also
+explores ``XGBRegressor`` and ``LightGBM``'s LambdaRank and scores each trial
+with a weighted combination of rank correlation and mean absolute error (MAE).
+During training and hold-out evaluation the script reports:
 
 - **Spearman rank correlation** between predicted and actual results.
 - **Top 1 accuracy** – percentage of races where the predicted winner matches the real winner.
 - **Top 3 accuracy** – proportion of correctly predicted podium finishers.
+
+In practice the pure ranking objective yields the highest Spearman score,
+while enabling ``use_regression`` slightly reduces MAE with only a minor drop
+in rank correlation.
 
 ## Repository Structure
 
