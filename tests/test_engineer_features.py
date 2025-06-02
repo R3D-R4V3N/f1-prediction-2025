@@ -26,3 +26,4 @@ def test_delta_and_cross_avg_and_rookie_flag():
     assert out[(out["Season"]==2025)]["IsRookie"].eq(0).all()
     cavg = out[(out["Season"]==2025) & (out["DriverNumber"]==1)]["CrossAvgFinish"].iloc[0]
     assert cavg == pytest.approx(5.0)
+    assert "Month" in out.columns
