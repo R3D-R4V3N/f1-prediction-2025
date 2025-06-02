@@ -109,8 +109,8 @@ def build_group_list(df: pd.DataFrame) -> list:
     return df.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
 
 
-def _rank_metrics(actual: pd.Series, preds: ndarray) -> dict:
-    """Compute ranking-focused metrics."""
+def _rank_metrics(actual: pd.Series, preds: ndarray, groups=None) -> dict:
+    """Compute ranking-focused metrics and optional group bias."""
     actual_series = pd.Series(actual).reset_index(drop=True)
     pred_series = pd.Series(preds)
     rho = spearmanr(actual_series, pred_series).correlation
@@ -121,7 +121,16 @@ def _rank_metrics(actual: pd.Series, preds: ndarray) -> dict:
         top3 = len(set(pred_order[:3]) & set(actual_order[:3])) / 3.0
     else:
         top3 = 0.0
-    return {"spearman": rho, "top1": top1, "top3": top3}
+
+    result = {"spearman": rho, "top1": top1, "top3": top3}
+
+    if groups is not None:
+        df = pd.DataFrame({"actual": actual_series, "pred": pred_series, "group": groups})
+        stats = df.groupby("group").agg(actual_mean=("actual", "mean"), pred_mean=("pred", "mean"))
+        bias = (stats["actual_mean"] - stats["pred_mean"]).to_dict()
+        result["bias_per_group"] = bias
+
+    return result
 
 
 def _train_model(features, target, cv, debug=False, use_regression=False):
