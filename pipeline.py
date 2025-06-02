@@ -189,7 +189,13 @@ def predict_race(
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results['BestTime'].median()
-        default_delta_next = qual_results['DeltaToNext'].mean()
+        if 'DeltaToNext' in qual_results.columns:
+            default_delta_next = qual_results['DeltaToNext'].mean()
+        else:
+            delta_series = (
+                qual_results.sort_values('BestTime')['BestTime'].diff(-1).abs()
+            )
+            default_delta_next = delta_series.mean()
     else:
         default_best_q = race_data['BestQualiTime'].median()
         default_delta_next = race_data['DeltaToNext'].mean()
@@ -683,7 +689,13 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results["BestTime"].median()
-        default_delta_next = qual_results["DeltaToNext"].mean()
+        if "DeltaToNext" in qual_results.columns:
+            default_delta_next = qual_results["DeltaToNext"].mean()
+        else:
+            delta_series = (
+                qual_results.sort_values("BestTime")["BestTime"].diff(-1).abs()
+            )
+            default_delta_next = delta_series.mean()
     else:
         default_best_q = race_data["BestQualiTime"].median()
         default_delta_next = race_data["DeltaToNext"].mean()
