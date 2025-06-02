@@ -14,8 +14,19 @@ from sklearn.model_selection import train_test_split
 logger = logging.getLogger(__name__)
 
 
-def _fit_xgb_ranker(model, X, y, *, group=None, eval_set=None, eval_group=None, early_stopping_rounds=20, verbose=False):
+def _fit_xgb_ranker(
+    model,
+    X,
+    y,
+    *,
+    group=None,
+    eval_set=None,
+    eval_group=None,
+    early_stopping_rounds=20,
+    verbose=False,
+):
     """Fit ``XGBRanker`` handling early stopping across versions."""
+
     try:
         model.fit(
             X,
@@ -26,7 +37,11 @@ def _fit_xgb_ranker(model, X, y, *, group=None, eval_set=None, eval_group=None, 
             early_stopping_rounds=early_stopping_rounds,
             verbose=verbose,
         )
+        return model
     except TypeError:
+        pass
+
+    try:
         import xgboost as xgb
 
         model.fit(
@@ -38,6 +53,18 @@ def _fit_xgb_ranker(model, X, y, *, group=None, eval_set=None, eval_group=None, 
             callbacks=[xgb.callback.EarlyStopping(rounds=early_stopping_rounds)],
             verbose=verbose,
         )
+        return model
+    except TypeError:
+        pass
+
+    model.fit(
+        X,
+        y,
+        group=group,
+        eval_set=eval_set,
+        eval_group=eval_group,
+        verbose=verbose,
+    )
     return model
 
 
