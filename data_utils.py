@@ -21,6 +21,9 @@ CACHE_DIR = 'f1_cache'
 makedirs(CACHE_DIR, exist_ok=True)
 Cache.enable_cache(CACHE_DIR)
 
+# Penalty applied when qualifying DeltaToNext is unavailable
+DELTA_NEXT_PENALTY = 5.0
+
 
 def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
     """Return the driver lineup for a given event using FastF1."""
@@ -114,8 +117,28 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
 
     for col in ["Q1", "Q2", "Q3"]:
         q_res[col] = q_res[col].apply(_to_seconds)
+
     q_res["BestTime"] = q_res[["Q1", "Q2", "Q3"]].min(axis=1)
     q_res.rename(columns={"Position": "GridPosition", "TeamName": "Team"}, inplace=True)
+
+    q_res["MissedQ3"] = q_res["Q3"].isna().astype(int)
+    q_res["MissedQ2"] = q_res["Q2"].isna().astype(int)
+
+    q_res["DeltaToNext_Q3"] = nan
+    q_res["DeltaToNext_Q2"] = nan
+
+    q3_group = q_res[q_res["Q3"].notna()].sort_values("Q3")
+    delta_q3 = q3_group["Q3"].diff(-1).abs()
+    q_res.loc[q3_group.index, "DeltaToNext_Q3"] = delta_q3
+
+    q2_group = q_res[q_res["Q2"].notna()].sort_values("Q2")
+    delta_q2 = q2_group["Q2"].diff(-1).abs()
+    q_res.loc[q2_group.index, "DeltaToNext_Q2"] = delta_q2
+
+    q3_penalty = DELTA_NEXT_PENALTY
+    q_res["DeltaToNext"] = q_res["DeltaToNext_Q3"]
+    q_res.loc[q_res["MissedQ3"] == 1, "DeltaToNext"] = q3_penalty
+
     return q_res
 
 
@@ -283,6 +306,7 @@ CIRCUIT_COORDS = {
 race_cols = [
     'Season', 'RaceNumber', 'DriverNumber', 'GridPosition',
     'BestQualiTime', 'DeltaToBestQuali', 'DeltaToNext',
+    'DeltaToNext_Q3', 'DeltaToNext_Q2', 'MissedQ3', 'MissedQ2',
     'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
     'FP3BestTime', 'FP3LongRunTime',
     'AirTemp', 'TrackTemp', 'Rainfall', 'MissedQuali',
@@ -613,10 +637,14 @@ def _engineer_features(full_data):
         full_data['GridDropCount'] = 0
     if 'Q1Time' not in full_data.columns and 'Q1' in full_data.columns:
         full_data['Q1Time'] = pd.to_timedelta(full_data['Q1'], errors='coerce').dt.total_seconds()
+    if 'Q2Time' not in full_data.columns and 'Q2' in full_data.columns:
+        full_data['Q2Time'] = pd.to_timedelta(full_data['Q2'], errors='coerce').dt.total_seconds()
     if 'Q3Time' not in full_data.columns and 'Q3' in full_data.columns:
         full_data['Q3Time'] = pd.to_timedelta(full_data['Q3'], errors='coerce').dt.total_seconds()
     if 'Q1Time' in full_data.columns:
         full_data['Q1Time'] = pd.to_numeric(full_data['Q1Time'], errors='coerce')
+    if 'Q2Time' in full_data.columns:
+        full_data['Q2Time'] = pd.to_numeric(full_data['Q2Time'], errors='coerce')
     if 'Q3Time' in full_data.columns:
         full_data['Q3Time'] = pd.to_numeric(full_data['Q3Time'], errors='coerce')
     if 'DidNotFinish' not in full_data.columns:
@@ -630,18 +658,54 @@ def _engineer_features(full_data):
             .transform('min')
         )
         full_data['DeltaToBestQuali'] = full_data['BestQualiTime'] - event_fastest
-        def _delta_next(g):
+        def _delta_next_all(g):
             ordered = g.sort_values('BestQualiTime')
             delta = ordered['BestQualiTime'].diff(-1).abs()
             return delta.reindex(g.index)
         full_data['DeltaToNext'] = (
             full_data.groupby(['Season', 'RaceNumber'], group_keys=False)
-            .apply(_delta_next)
+            .apply(_delta_next_all)
             .reindex(full_data.index)
         )
     else:
         full_data['DeltaToBestQuali'] = nan
         full_data['DeltaToNext'] = nan
+
+    if 'Q3Time' in full_data.columns:
+        def _delta_q3(g):
+            sub = g[g['Q3Time'].notna()].sort_values('Q3Time')
+            delta = sub['Q3Time'].diff(-1).abs()
+            return delta.reindex(g.index)
+        full_data['DeltaToNext_Q3'] = (
+            full_data.groupby(['Season', 'RaceNumber'], group_keys=False)
+            .apply(_delta_q3)
+            .reindex(full_data.index)
+        )
+    else:
+        full_data['DeltaToNext_Q3'] = nan
+
+    if 'Q2Time' in full_data.columns:
+        def _delta_q2(g):
+            sub = g[g['Q2Time'].notna()].sort_values('Q2Time')
+            delta = sub['Q2Time'].diff(-1).abs()
+            return delta.reindex(g.index)
+        full_data['DeltaToNext_Q2'] = (
+            full_data.groupby(['Season', 'RaceNumber'], group_keys=False)
+            .apply(_delta_q2)
+            .reindex(full_data.index)
+        )
+    else:
+        full_data['DeltaToNext_Q2'] = nan
+
+    full_data['MissedQ3'] = 1
+    full_data['MissedQ2'] = 1
+    if 'Q3Time' in full_data.columns:
+        full_data['MissedQ3'] = full_data['Q3Time'].isna().astype(int)
+    if 'Q2Time' in full_data.columns:
+        full_data['MissedQ2'] = full_data['Q2Time'].isna().astype(int)
+
+    full_data['DeltaToNext'] = full_data['DeltaToNext_Q3']
+    full_data.loc[full_data['MissedQ3'] == 1, 'DeltaToNext'] = DELTA_NEXT_PENALTY
     if 'BestQualiTime' in full_data.columns:
         team_mean_q = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('mean')
         team_size = full_data.groupby(['Season', 'RaceNumber', 'HistoricalTeam'])['BestQualiTime'].transform('size')
@@ -878,7 +942,11 @@ def _engineer_features(full_data):
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
     full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
-    full_data['DeltaToNext'] = full_data['DeltaToNext'].fillna(full_data['DeltaToNext'].mean())
+    full_data['DeltaToNext'] = full_data['DeltaToNext'].fillna(DELTA_NEXT_PENALTY)
+    full_data['DeltaToNext_Q3'] = full_data['DeltaToNext_Q3'].fillna(DELTA_NEXT_PENALTY)
+    full_data['DeltaToNext_Q2'] = full_data['DeltaToNext_Q2'].fillna(DELTA_NEXT_PENALTY)
+    full_data['MissedQ3'] = full_data['MissedQ3'].fillna(1).astype(int)
+    full_data['MissedQ2'] = full_data['MissedQ2'].fillna(1).astype(int)
     full_data['DeltaToTeammateQuali'] = full_data['DeltaToTeammateQuali'].fillna(
         full_data['DeltaToTeammateQuali'].median())
     full_data['QualiSessionGain'] = full_data['QualiSessionGain'].fillna(

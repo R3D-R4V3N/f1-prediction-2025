@@ -25,6 +25,7 @@ from data_utils import (
     CIRCUIT_METADATA,
     GRAND_PRIX_LIST,
     race_cols,
+    DELTA_NEXT_PENALTY,
 )
 from model_utils import _train_model, _rank_metrics, SeasonSplit
 
@@ -172,16 +173,27 @@ def predict_race(
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results['BestTime'].median()
-        if 'DeltaToNext' in qual_results.columns:
-            default_delta_next = qual_results['DeltaToNext'].mean()
-        else:
+        default_delta_next = qual_results.get('DeltaToNext', pd.Series()).mean()
+        default_delta_q3 = qual_results.get('DeltaToNext_Q3', pd.Series()).mean()
+        default_delta_q2 = qual_results.get('DeltaToNext_Q2', pd.Series()).mean()
+        if pd.isna(default_delta_next):
             delta_series = (
                 qual_results.sort_values('BestTime')['BestTime'].diff(-1).abs()
             )
             default_delta_next = delta_series.mean()
+        if pd.isna(default_delta_q3):
+            default_delta_q3 = DELTA_NEXT_PENALTY
+        if pd.isna(default_delta_q2):
+            default_delta_q2 = DELTA_NEXT_PENALTY
     else:
         default_best_q = race_data['BestQualiTime'].median()
         default_delta_next = race_data['DeltaToNext'].mean()
+        default_delta_q3 = race_data.get('DeltaToNext_Q3', pd.Series()).mean()
+        default_delta_q2 = race_data.get('DeltaToNext_Q2', pd.Series()).mean()
+        if pd.isna(default_delta_q3):
+            default_delta_q3 = DELTA_NEXT_PENALTY
+        if pd.isna(default_delta_q2):
+            default_delta_q2 = DELTA_NEXT_PENALTY
 
     hist_air = race_data['AirTemp'].mean()
     hist_track = race_data['TrackTemp'].mean()
@@ -408,6 +420,10 @@ def predict_race(
             'FP3LongRunTime': fp3_long_time,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
             'DeltaToNext': d.get('DeltaToNext', default_delta_next),
+            'DeltaToNext_Q3': d.get('DeltaToNext_Q3', default_delta_q3),
+            'DeltaToNext_Q2': d.get('DeltaToNext_Q2', default_delta_q2),
+            'MissedQ3': d.get('MissedQ3', 1),
+            'MissedQ2': d.get('MissedQ2', 1),
             'SprintFinish': d.get('SprintFinish'),
             'HasSprint': 1 if has_sprint else 0,
             'Recent3AvgFinish': recent3_avg,
@@ -456,6 +472,11 @@ def predict_race(
     pred_df['BestQualiTime'] = pred_df['BestQualiTime'].fillna(
         race_data['BestQualiTime'].median()
     )
+    pred_df['DeltaToNext'] = pd.to_numeric(pred_df['DeltaToNext'], errors='coerce').fillna(default_delta_next)
+    pred_df['DeltaToNext_Q3'] = pd.to_numeric(pred_df['DeltaToNext_Q3'], errors='coerce').fillna(default_delta_q3)
+    pred_df['DeltaToNext_Q2'] = pd.to_numeric(pred_df['DeltaToNext_Q2'], errors='coerce').fillna(default_delta_q2)
+    pred_df['MissedQ3'] = pd.to_numeric(pred_df['MissedQ3'], errors='coerce').fillna(1).astype(int)
+    pred_df['MissedQ2'] = pd.to_numeric(pred_df['MissedQ2'], errors='coerce').fillna(1).astype(int)
     pred_df['FP3BestTime'] = (
         pd.to_numeric(pred_df['FP3BestTime'], errors='coerce')
         .fillna(race_data['FP3BestTime'].mean())
@@ -696,16 +717,27 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
 
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results["BestTime"].median()
-        if "DeltaToNext" in qual_results.columns:
-            default_delta_next = qual_results["DeltaToNext"].mean()
-        else:
+        default_delta_next = qual_results.get("DeltaToNext", pd.Series()).mean()
+        default_delta_q3 = qual_results.get("DeltaToNext_Q3", pd.Series()).mean()
+        default_delta_q2 = qual_results.get("DeltaToNext_Q2", pd.Series()).mean()
+        if pd.isna(default_delta_next):
             delta_series = (
                 qual_results.sort_values("BestTime")["BestTime"].diff(-1).abs()
             )
             default_delta_next = delta_series.mean()
+        if pd.isna(default_delta_q3):
+            default_delta_q3 = DELTA_NEXT_PENALTY
+        if pd.isna(default_delta_q2):
+            default_delta_q2 = DELTA_NEXT_PENALTY
     else:
         default_best_q = race_data["BestQualiTime"].median()
         default_delta_next = race_data["DeltaToNext"].mean()
+        default_delta_q3 = race_data.get("DeltaToNext_Q3", pd.Series()).mean()
+        default_delta_q2 = race_data.get("DeltaToNext_Q2", pd.Series()).mean()
+        if pd.isna(default_delta_q3):
+            default_delta_q3 = DELTA_NEXT_PENALTY
+        if pd.isna(default_delta_q2):
+            default_delta_q2 = DELTA_NEXT_PENALTY
 
     hist_air = race_data["AirTemp"].mean()
     hist_track = race_data["TrackTemp"].mean()
@@ -940,6 +972,10 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
                 "FP3LongRunTime": fp3_long_time,
                 "DeltaToBestQuali": d.get("DeltaToBestQuali", 0),
                 "DeltaToNext": d.get("DeltaToNext", default_delta_next),
+                "DeltaToNext_Q3": d.get("DeltaToNext_Q3", default_delta_q3),
+                "DeltaToNext_Q2": d.get("DeltaToNext_Q2", default_delta_q2),
+                "MissedQ3": d.get("MissedQ3", 1),
+                "MissedQ2": d.get("MissedQ2", 1),
                 "SprintFinish": d.get("SprintFinish"),
                 "HasSprint": 1 if has_sprint else 0,
                 "Recent3AvgFinish": recent3_avg,
@@ -985,6 +1021,11 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
     pred_df["BestQualiTime"] = pred_df["BestQualiTime"].fillna(
         race_data["BestQualiTime"].median()
     )
+    pred_df["DeltaToNext"] = pd.to_numeric(pred_df["DeltaToNext"], errors="coerce").fillna(default_delta_next)
+    pred_df["DeltaToNext_Q3"] = pd.to_numeric(pred_df["DeltaToNext_Q3"], errors="coerce").fillna(default_delta_q3)
+    pred_df["DeltaToNext_Q2"] = pd.to_numeric(pred_df["DeltaToNext_Q2"], errors="coerce").fillna(default_delta_q2)
+    pred_df["MissedQ3"] = pd.to_numeric(pred_df["MissedQ3"], errors="coerce").fillna(1).astype(int)
+    pred_df["MissedQ2"] = pd.to_numeric(pred_df["MissedQ2"], errors="coerce").fillna(1).astype(int)
     pred_df["FP3BestTime"] = (
         pd.to_numeric(pred_df["FP3BestTime"], errors="coerce").fillna(race_data["FP3BestTime"].mean())
     )
