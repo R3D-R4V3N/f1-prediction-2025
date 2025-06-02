@@ -48,10 +48,13 @@ If you want live weather predictions, set the `OPENWEATHER_API_KEY` environment 
 1. **Single race prediction**
 
    ```bash
-   python pipeline.py
+   python pipeline.py --grand_prix "Monaco Grand Prix" --year 2024
    ```
 
-   By default this runs `predict_race` for the Chinese Grand Prix in 2025. Edit the last lines of `pipeline.py` or call the function from Python to choose another event.
+   Provide the Grand Prix name and season year with `--grand_prix` and `--year`.
+   Add `--retrain` to force the model to train again instead of using the cached
+   version. Without any options the script predicts the Chinese Grand Prix in
+   2025.
 
 2. **Streamlit web app**
 
