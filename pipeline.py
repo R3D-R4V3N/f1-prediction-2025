@@ -628,8 +628,11 @@ def predict_race(
 
 
 def _predict_with_existing_model(model, race_data, grand_prix, year):
+    # Historical data may use either "Circuit" or legacy "GrandPrix" for the
+    # event name. Support both to avoid KeyError when only one exists.
+    gp_col = "GrandPrix" if "GrandPrix" in race_data.columns else "Circuit"
     this_race_number = race_data.loc[
-        (race_data["Season"] == year) & (race_data["GrandPrix"] == grand_prix),
+        (race_data["Season"] == year) & (race_data[gp_col] == grand_prix),
         "RaceNumber",
     ].iloc[0]
     mask_past = ~(
