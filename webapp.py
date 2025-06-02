@@ -1,4 +1,9 @@
 import logging
+import os
+import pickle
+from typing import Optional
+
+import matplotlib.pyplot as plt
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,6 +16,33 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+FEATURE_IMPORTANCE_PATH = os.path.join(
+    os.path.dirname(__file__), 'model_info', 'feature_importance.png'
+)
+
+
+def _plot_cached_importance(year: int) -> Optional[plt.Figure]:
+    """Load model and return a feature importance figure."""
+    model_path = os.path.join(os.path.dirname(__file__), 'cache', f'model_{year}.pkl')
+    if not os.path.exists(model_path):
+        return None
+    try:
+        from xgboost import XGBRanker, plot_importance
+    except Exception as err:
+        logger.warning("xgboost not available: %s", err)
+        return None
+    try:
+        with open(model_path, 'rb') as f:
+            model = pickle.load(f)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        plot_importance(model, max_num_features=20, ax=ax)
+        ax.set_title('Top 20 Feature Importances')
+        fig.tight_layout()
+        return fig
+    except Exception as err:
+        logger.warning("Could not build feature importance: %s", err)
+        return None
 
 
 @st.cache_data(show_spinner=False)
@@ -55,10 +87,14 @@ if st.button('Predict Results'):
         st.dataframe(results[['Final_Position', 'Driver', 'Team', 'Grid']])
 
         if st.checkbox('Show Feature Importance'):
-            try:
-                st.image('model_info/feature_importance.png')
-            except Exception:
-                st.info('Feature importance plot not available')
+            if os.path.exists(FEATURE_IMPORTANCE_PATH):
+                st.image(FEATURE_IMPORTANCE_PATH)
+            else:
+                fig = _plot_cached_importance(year)
+                if fig is not None:
+                    st.pyplot(fig)
+                else:
+                    st.info('Feature importance plot not available')
 
         if debug_mode:
             actual = _load_actual_results(year, gp)
