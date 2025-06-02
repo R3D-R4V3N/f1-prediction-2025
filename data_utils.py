@@ -36,7 +36,10 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
     try:
         session.load(telemetry=False, laps=False, weather=False)
         if hasattr(session, "results") and not session.results.empty:
-            info = session.results[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
+            res_df = pd.DataFrame(
+                session.results.values, columns=session.results.columns
+            )
+            info = res_df[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
             info.rename(columns={"TeamName": "Team"}, inplace=True)
             return info
     except Exception:
@@ -89,8 +92,16 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     round_number = int(match.iloc[0]["RoundNumber"])
     session = get_session(year, round_number, "Q")
     session.load()
-    q_res = session.results[[
-        "DriverNumber", "Abbreviation", "FullName", "TeamName", "Position", "Q1", "Q2", "Q3"
+    qdf = pd.DataFrame(session.results.values, columns=session.results.columns)
+    q_res = qdf[[
+        "DriverNumber",
+        "Abbreviation",
+        "FullName",
+        "TeamName",
+        "Position",
+        "Q1",
+        "Q2",
+        "Q3",
     ]].copy()
 
     def _to_seconds(val):
@@ -321,7 +332,12 @@ def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
             try:
                 session = get_session(season, rnd, 'R')
                 session.load()
-                results = session.results[['DriverNumber', 'Position', 'Points', 'GridPosition', 'Status']]
+                res_df = pd.DataFrame(
+                    session.results.values, columns=session.results.columns
+                )
+                results = res_df[
+                    ['DriverNumber', 'Position', 'Points', 'GridPosition', 'Status']
+                ]
                 results['Season'] = season
                 results['RaceNumber'] = rnd
                 results['Circuit'] = session.event['EventName']
@@ -339,7 +355,12 @@ def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
                 try:
                     q_session = get_session(season, rnd, 'Q')
                     q_session.load()
-                    q_results = q_session.results[['DriverNumber', 'Position', 'Q1', 'Q2', 'Q3']]
+                    qdf = pd.DataFrame(
+                        q_session.results.values, columns=q_session.results.columns
+                    )
+                    q_results = qdf[
+                        ['DriverNumber', 'Position', 'Q1', 'Q2', 'Q3']
+                    ]
 
                     def _best_time(row):
                         times = []
@@ -398,7 +419,13 @@ def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
                 try:
                     sprint_session = get_session(season, rnd, 'S')
                     sprint_session.load()
-                    sprint_res = sprint_session.results[['DriverNumber', 'Position']].rename(
+                    sdf = pd.DataFrame(
+                        sprint_session.results.values,
+                        columns=sprint_session.results.columns,
+                    )
+                    sprint_res = sdf[
+                        ['DriverNumber', 'Position']
+                    ].rename(
                         columns={'Position': 'SprintFinish'}
                     )
                     results = results.merge(sprint_res, on='DriverNumber', how='left')
@@ -418,7 +445,8 @@ def _add_driver_team_info(full_data, seasons):
             first_race = schedule.iloc[0]['RoundNumber']
             session = get_session(season, first_race, 'R')
             session.load()
-            for _, row in session.results.iterrows():
+            df = pd.DataFrame(session.results.values, columns=session.results.columns)
+            for _, row in df.iterrows():
                 driver_number = row['DriverNumber']
                 driver_team = row['TeamName']
                 seasons_drivers.setdefault(season, {})[driver_number] = driver_team
@@ -875,6 +903,8 @@ def _prepare_features(
         team_df.reset_index(drop=True),
         circuit_df.reset_index(drop=True)
     ], axis=1)
+    if features.columns.duplicated().any():
+        features = features.loc[:, ~features.columns.duplicated()]
     return features, team_encoder, circuit_encoder, top_circuits
 
 
