@@ -87,7 +87,8 @@ def predict_race(
             race_data = _engineer_features(race_data)
             race_data.to_parquet(cache_data_path)
         logger.info("Loaded cached model and data for %s %d", grand_prix, year)
-        return _predict_with_existing_model(model, race_data, grand_prix, year)
+        results = _predict_with_existing_model(model, race_data, grand_prix, year)
+        return (results, None) if debug else results
 
     seasons = list(range(2021, year + 1))
 
