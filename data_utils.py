@@ -316,7 +316,7 @@ race_cols = [
     'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
     'DriverTrackPodiums', 'DriverTrackDNFs', 'IsRookie',
     'PrevYearConstructorRank', 'TeamRecentQuali', 'TeamRecentFinish',
-    'TeamReliability', 'TeamTier_0', 'TeamTier_1',
+    'TeamReliability', 'DriverSeasonDNFs', 'TeamSeasonDNFs', 'TeamTier_0', 'TeamTier_1',
     'TeamTier_2', 'TeamTier_3', 'CircuitLength', 'NumCorners',
     'DRSZones', 'StdLapTime', 'IsStreet', 'DownforceLevel',
     'Overtakes_CurrentYear'
@@ -785,9 +785,21 @@ def _engineer_features(full_data):
         .apply(lambda s: s.shift().rolling(window=5, min_periods=1).sum())
         .reset_index(level=[0, 1], drop=True)
     )
+    full_data['DriverSeasonDNFs'] = (
+        full_data.groupby(['Season', 'DriverNumber'])['DidNotFinish']
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).sum())
+        .reset_index(level=[0, 1], drop=True)
+    )
+    full_data['TeamSeasonDNFs'] = (
+        full_data.groupby(['Season', 'HistoricalTeam'])['DidNotFinish']
+        .apply(lambda s: s.shift().rolling(window=5, min_periods=1).sum())
+        .reset_index(level=[0, 1], drop=True)
+    )
     full_data['TeamRecentQuali'] = full_data['TeamRecentQuali'].fillna(full_data['GridPosition'].mean())
     full_data['TeamRecentFinish'] = full_data['TeamRecentFinish'].fillna(full_data['Position'].mean())
     full_data['TeamReliability'] = full_data['TeamReliability'].fillna(0)
+    full_data['DriverSeasonDNFs'] = full_data['DriverSeasonDNFs'].fillna(0)
+    full_data['TeamSeasonDNFs'] = full_data['TeamSeasonDNFs'].fillna(0)
     full_data.sort_values(['Season', 'RaceNumber'], inplace=True)
     full_data['DriverChampPoints'] = (
         full_data.groupby(['Season', 'DriverNumber'])['Points']
