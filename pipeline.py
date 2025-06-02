@@ -27,7 +27,7 @@ from data_utils import (
     race_cols,
     DELTA_NEXT_PENALTY,
 )
-from model_utils import _train_model, _rank_metrics, SeasonSplit
+from model_utils import _train_model, _rank_metrics, SeasonSplit, CircuitSplit
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +121,15 @@ def predict_race(
             ho_circ_enc,
             ho_top_circuits,
         )
-        ho_cv = SeasonSplit(sorted(train_df['Season'].unique()))
-        ho_model, _ = _train_model(ho_feat, train_df['Position'], ho_cv, debug)
+        ho_seasons = sorted(train_df['Season'].unique())
+        ho_split = SeasonSplit(ho_seasons)
+        ho_splits = list(ho_split.split(train_df.reset_index(drop=True)))
+        last_ho_season = ho_seasons[-1]
+        ho_circuits = train_df[train_df['Season'] == last_ho_season]['Circuit'].unique()
+        ho_splits += list(
+            CircuitSplit(ho_circuits).split(train_df.reset_index(drop=True))
+        )
+        ho_model, _ = _train_model(ho_feat, train_df['Position'], ho_splits, debug)
         ho_preds = ho_model.predict(ho_val_feat)
         holdout_mae = mean_absolute_error(holdout_df['Position'], ho_preds)
         holdout_rank = _rank_metrics(holdout_df['Position'], ho_preds)
@@ -134,10 +141,17 @@ def predict_race(
     ) = _encode_features(race_data, race_cols)
     features = features.loc[race_data.index].reset_index(drop=True)
 
-    cv = SeasonSplit(sorted(race_data['Season'].unique()))
+    seasons_sorted = sorted(race_data['Season'].unique())
+    season_splitter = SeasonSplit(seasons_sorted)
+    season_splits = list(season_splitter.split(race_data.reset_index(drop=True)))
+    last_season = seasons_sorted[-1]
+    last_circuits = race_data[race_data['Season'] == last_season]['Circuit'].unique()
+    season_splits += list(
+        CircuitSplit(last_circuits).split(race_data.reset_index(drop=True))
+    )
 
     target = race_data['Position']
-    model, cv_rho = _train_model(features, target, cv, debug)
+    model, cv_rho = _train_model(features, target, season_splits, debug)
 
     # Cache the fully trained model and engineered data
     os.makedirs("cache", exist_ok=True)
