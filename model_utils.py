@@ -82,6 +82,20 @@ class SeasonSplit:
         return len(self.seasons) - 1
 
 
+class CircuitSplit:
+    def __init__(self, circuits: Iterable[str]):
+        self.circuits = circuits
+
+    def split(self, X, y=None, groups=None):
+        for circ in self.circuits:
+            mask_train = X['Circuit'] != circ
+            mask_val = X['Circuit'] == circ
+            yield (X[mask_train].index.values, X[mask_val].index.values)
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return len(self.circuits)
+
+
 def build_group_list(df: pd.DataFrame) -> list:
     return df.groupby(["Season", "RaceNumber"], sort=False).size().to_list()
 
@@ -204,4 +218,4 @@ def _train_model(features, target, cv, debug=False):
     return model, best_score
 
 
-__all__ = ['_rank_metrics', '_train_model', 'SeasonSplit', 'build_group_list']
+__all__ = ['_rank_metrics', '_train_model', 'SeasonSplit', 'CircuitSplit', 'build_group_list']
