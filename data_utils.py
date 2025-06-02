@@ -309,6 +309,7 @@ race_cols = [
     'DeltaToNext_Q3', 'DeltaToNext_Q2', 'MissedQ3', 'MissedQ2',
     'IsMissing_Q3Time', 'IsMissing_Q1Time',
     'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
+    'QualiOverGrid',
     'FP3BestTime', 'FP3LongRunTime', 'IsMissing_FP3LongRunTime',
     'AirTemp', 'TrackTemp', 'Rainfall', 'IsMissing_Rainfall', 'MissedQuali',
     'SprintFinish', 'CrossAvgFinish', 'RecentAvgPoints',
@@ -677,9 +678,15 @@ def _engineer_features(full_data):
             .apply(_delta_next_all)
             .reindex(full_data.index)
         )
+        full_data['QualiRank'] = full_data.groupby(['Season', 'RaceNumber'])[
+            'BestQualiTime'
+        ].rank(method='dense', ascending=True)
+        full_data['QualiOverGrid'] = full_data['QualiRank'] / full_data['GridPosition']
     else:
         full_data['DeltaToBestQuali'] = nan
         full_data['DeltaToNext'] = nan
+        full_data['QualiRank'] = nan
+        full_data['QualiOverGrid'] = nan
 
     if 'Q3Time' in full_data.columns:
         def _delta_q3(g):
@@ -984,6 +991,8 @@ def _engineer_features(full_data):
     full_data['ConstructorStanding'] = full_data['ConstructorStanding'].fillna(full_data['ConstructorStanding'].max())
     full_data['PrevYearConstructorRank'] = full_data['PrevYearConstructorRank'].fillna(
         full_data['PrevYearConstructorRank'].max())
+    full_data['QualiOverGrid'] = full_data['QualiOverGrid'].fillna(
+        full_data['QualiOverGrid'].median())
 
     required_columns = [
         'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
