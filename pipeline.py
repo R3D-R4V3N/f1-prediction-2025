@@ -628,21 +628,28 @@ def predict_race(
 
 
 def _predict_with_existing_model(model, race_data, grand_prix, year):
+    """Predict race results using a pre-trained model and cached data."""
     # Historical data may use either "Circuit" or legacy "GrandPrix" for the
     # event name. Support both to avoid KeyError when only one exists.
     gp_col = "GrandPrix" if "GrandPrix" in race_data.columns else "Circuit"
-    this_race_number = race_data.loc[
-        (race_data["Season"] == year) & (race_data[gp_col] == grand_prix),
-        "RaceNumber",
-    ].iloc[0]
+
+    schedule = fastf1.get_event_schedule(year)
+    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
+    if match.empty:
+        raise ValueError(f"Grand Prix '{grand_prix}' not found for {year}")
+
+    mask = (race_data["Season"] == year) & (race_data[gp_col] == grand_prix)
+    if mask.any():
+        this_race_number = race_data.loc[mask, "RaceNumber"].iloc[0]
+    else:
+        this_race_number = int(match.iloc[0]["RoundNumber"])
+
     mask_past = ~(
         (race_data["Season"] == year)
         & (race_data["RaceNumber"] >= this_race_number)
     )
     race_data = race_data.loc[mask_past].reset_index(drop=True)
 
-    schedule = fastf1.get_event_schedule(year)
-    match = schedule[schedule["EventName"].str.contains(grand_prix, case=False, na=False)]
     event_date = pd.to_datetime(match.iloc[0].get("EventDate"), errors="coerce")
     event_month = event_date.month
     event_day = event_date.day
