@@ -446,7 +446,11 @@ def predict_race(
     overall_avg_pos = race_data['Position'].mean()
     rookie_avg_pos = race_data[race_data['ExperienceCount'] == 1]['Position'].mean()
     for _, d in driver_iter.iterrows():
-        exp_count = len(race_data[race_data['DriverNumber'] == d['DriverNumber']]) + 1
+        driver_num = d.get('DriverNumber')
+        if pd.notna(driver_num):
+            exp_count = len(race_data[race_data['DriverNumber'] == driver_num]) + 1
+        else:
+            exp_count = 1
         team_name = d['Team']
         team_same_season = race_data[
             (race_data['HistoricalTeam'] == team_name) &
@@ -477,7 +481,9 @@ def predict_race(
         else:
             team_rel = 0.0
 
-        stats = driver_stats_lookup.loc[(d['DriverNumber'], grand_prix)] if (d['DriverNumber'], grand_prix) in driver_stats_lookup.index else None
+        driver_num_val = d.get('DriverNumber')
+        key = (driver_num_val, grand_prix)
+        stats = driver_stats_lookup.loc[key] if driver_num_val is not None and key in driver_stats_lookup.index else None
         if stats is None:
             avg_track = race_data['DriverAvgTrackFinish'].mean()
             podiums = 0.0
@@ -512,7 +518,11 @@ def predict_race(
         else:
             fp3_long_time = default_fp3_long
 
-        driver_num = int(d['DriverNumber'])
+        driver_num = d.get('DriverNumber')
+        if pd.isna(driver_num):
+            driver_num = -1
+        else:
+            driver_num = int(driver_num)
         past_races = race_data[
             (race_data['DriverNumber'] == driver_num) & (
                 (race_data['Season'] < year) |
@@ -560,9 +570,9 @@ def predict_race(
             'TeamRecentQuali': team_recent_q,
             'TeamRecentFinish': team_recent_f,
             'TeamReliability': team_rel,
-            'DriverChampPoints': driver_pts_map.get(d['DriverNumber'], 0.0),
+                'DriverChampPoints': driver_pts_map.get(driver_num, 0.0),
             'ConstructorChampPoints': constructor_pts_map.get(d['Team'], 0.0),
-            'DriverStanding': int(driver_stand_map.get(d['DriverNumber'], 0)),
+                'DriverStanding': int(driver_stand_map.get(driver_num, 0)),
             'ConstructorStanding': int(constructor_stand_map.get(d['Team'], 0)),
             'PrevYearConstructorRank': prev_rank_map.get(team_name, default_prev_rank),
             'CircuitLength': circuit_length_val,
