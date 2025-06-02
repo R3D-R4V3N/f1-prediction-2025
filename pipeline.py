@@ -19,6 +19,7 @@ from data_utils import (
     _get_event_drivers,
     _get_qualifying_results,
     _get_fp3_results,
+    _season_driver_team_stats,
     fetch_weather,
     CIRCUIT_METADATA,
     GRAND_PRIX_LIST,
@@ -301,46 +302,16 @@ def predict_race(
     default_team_avg = race_data['Position'].mean()
     default_team_quali = race_data['GridPosition'].mean()
 
-    driver_stats_lookup = race_data.set_index(['DriverNumber', 'Circuit'])[
-        ['DriverAvgTrackFinish', 'DriverTrackPodiums', 'DriverTrackDNFs']
-    ]
-
-    year_data = race_data[race_data['Season'] == year]
-    if not year_data.empty:
-        driver_pts = year_data.groupby('DriverNumber')['Points'].sum()
-        constructor_pts = year_data.groupby('HistoricalTeam')['Points'].sum()
-        driver_standings = driver_pts.rank(method='dense', ascending=False).astype(int)
-        constructor_standings = constructor_pts.rank(method='dense', ascending=False).astype(int)
-        driver_pts_map = driver_pts.to_dict()
-        constructor_pts_map = constructor_pts.to_dict()
-        driver_stand_map = driver_standings.to_dict()
-        constructor_stand_map = constructor_standings.to_dict()
-    else:
-        driver_pts_map = {}
-        constructor_pts_map = {}
-        driver_stand_map = {}
-        constructor_stand_map = {}
-
-    same_season_teams = race_data[race_data['Season'] == year]
-    if not same_season_teams.empty:
-        team_strength = (
-            same_season_teams.groupby('HistoricalTeam')['Position']
-            .mean()
-            .to_dict()
-        )
-    else:
-        team_strength = {}
-
-    prev_year = year - 1
-    prev_data = race_data[race_data['Season'] == prev_year]
-    if not prev_data.empty:
-        final_pts = prev_data.groupby('HistoricalTeam')['ConstructorChampPoints'].max()
-        prev_rank = final_pts.rank(method='dense', ascending=False)
-        prev_rank_map = prev_rank.to_dict()
-        default_prev_rank = int(prev_rank.max())
-    else:
-        prev_rank_map = {}
-        default_prev_rank = 0
+    (
+        driver_stats_lookup,
+        driver_pts_map,
+        constructor_pts_map,
+        driver_stand_map,
+        constructor_stand_map,
+        team_strength,
+        prev_rank_map,
+        default_prev_rank,
+    ) = _season_driver_team_stats(race_data, year)
 
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results['BestTime'].min()
@@ -830,44 +801,16 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
     default_team_avg = race_data["Position"].mean()
     default_team_quali = race_data["GridPosition"].mean()
 
-    driver_stats_lookup = race_data.set_index(["DriverNumber", "Circuit"])[
-        ["DriverAvgTrackFinish", "DriverTrackPodiums", "DriverTrackDNFs"]
-    ]
-
-    year_data = race_data[race_data["Season"] == year]
-    if not year_data.empty:
-        driver_pts = year_data.groupby("DriverNumber")["Points"].sum()
-        constructor_pts = year_data.groupby("HistoricalTeam")["Points"].sum()
-        driver_standings = driver_pts.rank(method="dense", ascending=False).astype(int)
-        constructor_standings = constructor_pts.rank(method="dense", ascending=False).astype(int)
-        driver_pts_map = driver_pts.to_dict()
-        constructor_pts_map = constructor_pts.to_dict()
-        driver_stand_map = driver_standings.to_dict()
-        constructor_stand_map = constructor_standings.to_dict()
-    else:
-        driver_pts_map = {}
-        constructor_pts_map = {}
-        driver_stand_map = {}
-        constructor_stand_map = {}
-
-    same_season_teams = race_data[race_data["Season"] == year]
-    if not same_season_teams.empty:
-        team_strength = (
-            same_season_teams.groupby("HistoricalTeam")["Position"].mean().to_dict()
-        )
-    else:
-        team_strength = {}
-
-    prev_year = year - 1
-    prev_data = race_data[race_data["Season"] == prev_year]
-    if not prev_data.empty:
-        final_pts = prev_data.groupby("HistoricalTeam")["ConstructorChampPoints"].max()
-        prev_rank = final_pts.rank(method="dense", ascending=False)
-        prev_rank_map = prev_rank.to_dict()
-        default_prev_rank = int(prev_rank.max())
-    else:
-        prev_rank_map = {}
-        default_prev_rank = 0
+    (
+        driver_stats_lookup,
+        driver_pts_map,
+        constructor_pts_map,
+        driver_stand_map,
+        constructor_stand_map,
+        team_strength,
+        prev_rank_map,
+        default_prev_rank,
+    ) = _season_driver_team_stats(race_data, year)
 
     if qual_results is not None and not qual_results.empty:
         fastest = qual_results["BestTime"].min()

@@ -943,6 +943,59 @@ def _encode_features(
     )
 
 
+def _season_driver_team_stats(race_data: pd.DataFrame, year: int):
+    """Return lookup tables with driver and constructor statistics for ``year``."""
+
+    driver_stats_lookup = race_data.set_index(["DriverNumber", "Circuit"])[
+        ["DriverAvgTrackFinish", "DriverTrackPodiums", "DriverTrackDNFs"]
+    ]
+
+    year_data = race_data[race_data["Season"] == year]
+    if not year_data.empty:
+        driver_pts = year_data.groupby("DriverNumber")["Points"].sum()
+        constructor_pts = year_data.groupby("HistoricalTeam")["Points"].sum()
+        driver_standings = driver_pts.rank(method="dense", ascending=False).astype(int)
+        constructor_standings = constructor_pts.rank(method="dense", ascending=False).astype(int)
+        driver_pts_map = driver_pts.to_dict()
+        constructor_pts_map = constructor_pts.to_dict()
+        driver_stand_map = driver_standings.to_dict()
+        constructor_stand_map = constructor_standings.to_dict()
+    else:
+        driver_pts_map = {}
+        constructor_pts_map = {}
+        driver_stand_map = {}
+        constructor_stand_map = {}
+
+    same_season_teams = race_data[race_data["Season"] == year]
+    team_strength = (
+        same_season_teams.groupby("HistoricalTeam")["Position"].mean().to_dict()
+        if not same_season_teams.empty
+        else {}
+    )
+
+    prev_year = year - 1
+    prev_data = race_data[race_data["Season"] == prev_year]
+    if not prev_data.empty:
+        final_pts = prev_data.groupby("HistoricalTeam")["ConstructorChampPoints"].max()
+        prev_rank = final_pts.rank(method="dense", ascending=False)
+        prev_rank_map = prev_rank.to_dict()
+        default_prev_rank = int(prev_rank.max())
+    else:
+        prev_rank_map = {}
+        default_prev_rank = 0
+
+    return (
+        driver_stats_lookup,
+        driver_pts_map,
+        constructor_pts_map,
+        driver_stand_map,
+        constructor_stand_map,
+        team_strength,
+        prev_rank_map,
+        default_prev_rank,
+    )
+
+
 __all__ = [
     '_get_event_drivers',
     '_get_qualifying_results',
@@ -959,5 +1012,6 @@ __all__ = [
     '_engineer_features',
     '_prepare_features',
     '_encode_features',
+    '_season_driver_team_stats',
     'race_cols',
 ]
