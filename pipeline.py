@@ -24,7 +24,7 @@ from data_utils import (
     GRAND_PRIX_LIST,
     race_cols,
 )
-from model_utils import _train_model, _rank_metrics
+from model_utils import _train_model, _rank_metrics, SeasonSplit
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +32,6 @@ try:
     import shap  # type: ignore
 except Exception:
     shap = None
-
-
-class SeasonSplit:
-    """Cross-validator that yields whole seasons as validation folds."""
-
-    def __init__(self, seasons, season_col="Season"):
-        self.seasons = list(seasons)
-        self.season_col = season_col
-
-    def split(self, X):
-        seasons_sorted = [s for s in self.seasons if s in X[self.season_col].unique()]
-        seasons_sorted.sort()
-        for i in range(1, len(seasons_sorted)):
-            train_idx = X.index[X[self.season_col].isin(seasons_sorted[:i])].to_numpy()
-            val_idx = X.index[X[self.season_col] == seasons_sorted[i]].to_numpy()
-            if len(train_idx) and len(val_idx):
-                yield train_idx, val_idx
-
-    def get_n_splits(self, X=None, y=None, groups=None):
-        return max(0, len(self.seasons) - 1)
 
 
 def predict_race(
