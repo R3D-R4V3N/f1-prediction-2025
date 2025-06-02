@@ -1,7 +1,7 @@
 import os
 import statistics
 import logging
-from typing import Iterable, List
+from typing import Iterable, List, Dict
 
 import numpy as np
 
@@ -13,6 +13,12 @@ except ImportError as exc:
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=os.environ.get("LOGLEVEL", "INFO").upper(),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 def _count_position_changes(laps: pd.DataFrame) -> int:
@@ -107,13 +113,38 @@ def average_overtakes(grand_prix: str, years: Iterable[int]) -> float:
     return float(weighted)
 
 
+def overtakes_per_year(grand_prix: str, years: Iterable[int]) -> Dict[int, int]:
+    """Return the overtake count for each season."""
+    counts: Dict[int, int] = {}
+    for yr in years:
+        try:
+            counts[yr] = count_overtakes(yr, grand_prix)
+        except Exception as err:
+            logger.warning("Failed to process %s %s: %s", yr, grand_prix, err)
+    if not counts:
+        raise RuntimeError("No races processed")
+    return counts
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Estimate race overtakes using lap position changes")
     parser.add_argument("grand_prix", help="Grand Prix name, e.g. 'Monaco'")
     parser.add_argument("years", nargs="+", type=int, help="List of seasons to average")
+    parser.add_argument(
+        "--per-year",
+        action="store_true",
+        help="Display the overtakes for each supplied year",
+    )
     args = parser.parse_args()
+
+    if args.per_year:
+        per_year = overtakes_per_year(args.grand_prix, args.years)
+        for yr in sorted(per_year):
+            logger.info(
+                "Overtakes at %s %d: %d", args.grand_prix, yr, per_year[yr]
+            )
 
     avg = average_overtakes(args.grand_prix, args.years)
     logger.info(

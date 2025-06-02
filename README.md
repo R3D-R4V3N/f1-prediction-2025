@@ -72,10 +72,10 @@ If you want live weather predictions, set the `OPENWEATHER_API_KEY` environment 
 4. **Estimate overtakes**
 
    ```bash
-   python estimate_overtakes.py "Monaco Grand Prix" 2022 2023 2024
+   LOGLEVEL=INFO python estimate_overtakes.py "Monaco Grand Prix" 2022 2023 2024
    ```
 
-   Calculates the weighted average number of genuine overtakes for the circuit and updates `overtake_stats.csv`.
+   Calculates the weighted average number of genuine overtakes for the circuit and updates `overtake_stats.csv`. Use `--per-year` to also display the count for each season. Set the `LOGLEVEL` environment variable to control the verbosity of the output.
 
 5. **Generate full season data**
 
@@ -113,9 +113,9 @@ Run the unit tests with:
 pytest --maxfail=1 --disable-warnings -q
 ```
 
-Set `LOGLEVEL=DEBUG` before running scripts to see detailed logs. Cached files
-are stored in `cache/` and the feature importance plot is saved under
-`model_info/`.
+Scripts read the `LOGLEVEL` environment variable (default `INFO`) to control
+logging verbosity. Cached files are stored in `cache/` and the feature
+importance plot is saved under `model_info/`.
 
 ## License
 
