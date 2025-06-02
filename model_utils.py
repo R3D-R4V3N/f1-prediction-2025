@@ -171,7 +171,13 @@ def _train_model(features, target, cv, debug=False):
         early_stopping_rounds=20,
         verbose=False,
     )
-    best_iter = model.best_iteration_
+    best_iter = None
+    for attr in ("best_iteration", "best_iteration_", "best_ntree_limit"):
+        if hasattr(model, attr):
+            best_iter = getattr(model, attr)
+            break
+    if best_iter is None:
+        best_iter = model.n_estimators
 
     model = XGBRanker(
         objective="rank:pairwise",
