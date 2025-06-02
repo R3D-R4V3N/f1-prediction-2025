@@ -167,16 +167,33 @@ def _get_sprint_results(year: int, grand_prix: str) -> pd.DataFrame:
 
 
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
-    """Return weighted average overtake counts mapped by circuit name."""
+    """Return overtake counts per circuit per season."""
     if not os.path.exists(path):
         return {}
     try:
         df = pd.read_csv(path)
     except Exception:
         return {}
-    if df.empty or "Circuit" not in df.columns or "WeightedAvgOvertakes" not in df.columns:
+
+    if df.empty or "Circuit" not in df.columns:
         return {}
-    return df.set_index("Circuit")["WeightedAvgOvertakes"].to_dict()
+
+    stats = {}
+    for _, row in df.iterrows():
+        circ = row["Circuit"]
+        year_cols = [c for c in df.columns if c.startswith("Overtakes_")]
+        year_map = {}
+        for col in year_cols:
+            try:
+                yr = int(col.split("_")[1])
+            except Exception:
+                continue
+            val = pd.to_numeric(row[col], errors="coerce")
+            if not pd.isna(val):
+                year_map[yr] = float(val)
+        if year_map:
+            stats[circ] = year_map
+    return stats
 
 
 OVERTAKE_AVERAGES = _load_overtake_stats()
@@ -277,7 +294,7 @@ race_cols = [
     'TeamReliability', 'TeamTier_0', 'TeamTier_1',
     'TeamTier_2', 'TeamTier_3', 'CircuitLength', 'NumCorners',
     'DRSZones', 'StdLapTime', 'IsStreet', 'DownforceLevel',
-    'WeightedAvgOvertakes'
+    'Overtakes_CurrentYear'
 ]
 
 
@@ -371,7 +388,26 @@ def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
                     results['AirTemp'] = nan
                     results['TrackTemp'] = nan
                     results['Rainfall'] = nan
-                results['WeightedAvgOvertakes'] = overtake_map.get(results['Circuit'].iloc[0], nan)
+                circ = results['Circuit'].iloc[0]
+                val = nan
+                overtake_years = overtake_map.get(circ, {})
+                if isinstance(overtake_years, dict):
+                    last_year = season - 1
+                    val = overtake_years.get(last_year, nan)
+                    if pd.isna(val):
+                        weights = [0.6, 0.3, 0.1]
+                        vals = []
+                        wts = []
+                        for w, yr in zip(weights, [last_year, last_year - 1, last_year - 2]):
+                            v = overtake_years.get(yr)
+                            if v is not None and not pd.isna(v):
+                                vals.append(v * w)
+                                wts.append(w)
+                        if wts:
+                            val = sum(vals) / sum(wts)
+                else:
+                    val = overtake_years or nan
+                results['Overtakes_CurrentYear'] = val
                 try:
                     q_session = get_session(season, rnd, 'Q')
                     q_session.load()
@@ -536,7 +572,9 @@ def _engineer_features(full_data):
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
-    full_data['WeightedAvgOvertakes'] = pd.to_numeric(full_data.get('WeightedAvgOvertakes'), errors='coerce')
+    full_data['Overtakes_CurrentYear'] = pd.to_numeric(
+        full_data.get('Overtakes_CurrentYear'), errors='coerce'
+    )
     # Ensure Points column exists for feature engineering
     full_data['Points'] = pd.to_numeric(
         full_data.get('Points', pd.Series(nan, index=full_data.index)),
@@ -827,8 +865,8 @@ def _engineer_features(full_data):
     # column.  Keeping ``Month`` allows other parts of the pipeline to
     # perform month-based aggregations without recalculating it.
     full_data = full_data.drop(columns=['Date'], errors='ignore')
-    full_data['WeightedAvgOvertakes'] = full_data['WeightedAvgOvertakes'].fillna(
-        full_data['WeightedAvgOvertakes'].mean())
+    full_data['Overtakes_CurrentYear'] = full_data['Overtakes_CurrentYear'].fillna(
+        full_data['Overtakes_CurrentYear'].mean())
     full_data['MissedQuali'] = full_data['BestQualiTime'].isna().astype(int)
     full_data['BestQualiTime'] = full_data['BestQualiTime'].fillna(
         full_data['BestQualiTime'].median())
