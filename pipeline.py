@@ -275,6 +275,16 @@ def predict_race(
     except Exception:
         fp3_results = None
 
+    try:
+        sprint_results = _get_sprint_results(year, grand_prix)
+        has_sprint = not sprint_results.empty
+        if qual_results is not None:
+            qual_results = qual_results.merge(sprint_results, on='Abbreviation', how='left')
+        drivers_df = drivers_df.merge(sprint_results, on='Abbreviation', how='left')
+    except Exception:
+        sprint_results = pd.DataFrame()
+        has_sprint = False
+
     if qual_results is not None and not qual_results.empty:
         default_best_q = qual_results['BestTime'].median()
         default_delta_next = qual_results.get('DeltaToNext', pd.Series()).mean()
