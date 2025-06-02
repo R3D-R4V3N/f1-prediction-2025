@@ -36,6 +36,22 @@ try:
 except Exception:
     shap = None
 
+# Forecast blending parameters
+FORECAST_DAYS = 7
+
+
+def _blend_alpha(days_to_race: int, circuit: str) -> float:
+    """Compute blending factor for forecast vs historical weather."""
+    if days_to_race > FORECAST_DAYS:
+        alpha = 0.0
+    else:
+        alpha = (1 - days_to_race / FORECAST_DAYS) ** 2
+        alpha = min(alpha, 0.9)
+    volatility = CIRCUIT_METADATA.get(circuit, {}).get("WeatherVolatility", 1.0)
+    alpha *= volatility
+    alpha = max(min(alpha, 0.9), 0.0)
+    return alpha
+
 
 def predict_race(
     grand_prix,
@@ -226,7 +242,7 @@ def predict_race(
         event_date_dt = datetime(year, event_month, event_day)
         today = datetime.now()
         days_to_race = max(0, (event_date_dt - today).days)
-        alpha = max(0.1, min(0.9, 1 - days_to_race / 30))
+        alpha = _blend_alpha(days_to_race, grand_prix)
 
         default_air = alpha * f_air + (1 - alpha) * hist_air
         default_track = alpha * f_track + (1 - alpha) * hist_track
@@ -777,7 +793,7 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
         event_date_dt = datetime(year, event_month, event_day)
         today = datetime.now()
         days_to_race = max(0, (event_date_dt - today).days)
-        alpha = max(0.1, min(0.9, 1 - days_to_race / 30))
+        alpha = _blend_alpha(days_to_race, grand_prix)
 
         default_air = alpha * f_air + (1 - alpha) * hist_air
         default_track = alpha * f_track + (1 - alpha) * hist_track
