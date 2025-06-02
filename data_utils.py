@@ -453,14 +453,24 @@ def _add_driver_team_info(full_data, seasons):
         except Exception:
             continue
 
-    full_data['HistoricalTeam'] = None
-    for idx, row in full_data.iterrows():
-        season = row['Season']
-        driver_num = row['DriverNumber']
-        if season in seasons_drivers and driver_num in seasons_drivers[season]:
-            full_data.at[idx, 'HistoricalTeam'] = seasons_drivers[season][driver_num]
-        else:
-            full_data.at[idx, 'HistoricalTeam'] = 'Unknown Team'
+    mapping_rows = []
+    for season, d_map in seasons_drivers.items():
+        for drv_num, team in d_map.items():
+            mapping_rows.append({
+                'Season': season,
+                'DriverNumber': drv_num,
+                'HistoricalTeam': team,
+            })
+    mapping_df = pd.DataFrame(mapping_rows)
+
+    if mapping_df.empty:
+        full_data['HistoricalTeam'] = 'Unknown Team'
+        return full_data
+
+    full_data = full_data.merge(
+        mapping_df, on=['Season', 'DriverNumber'], how='left'
+    )
+    full_data['HistoricalTeam'] = full_data['HistoricalTeam'].fillna('Unknown Team')
     return full_data
 
 
