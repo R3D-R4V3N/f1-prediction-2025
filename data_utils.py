@@ -305,11 +305,12 @@ CIRCUIT_COORDS = {
 # Canonical feature columns used for model training
 race_cols = [
     'Season', 'RaceNumber', 'DriverNumber', 'GridPosition',
-    'BestQualiTime', 'DeltaToBestQuali', 'DeltaToNext',
+    'BestQualiTime', 'IsMissing_BestQualiTime', 'DeltaToBestQuali', 'DeltaToNext',
     'DeltaToNext_Q3', 'DeltaToNext_Q2', 'MissedQ3', 'MissedQ2',
+    'IsMissing_Q3Time', 'IsMissing_Q1Time',
     'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
-    'FP3BestTime', 'FP3LongRunTime',
-    'AirTemp', 'TrackTemp', 'Rainfall', 'MissedQuali',
+    'FP3BestTime', 'FP3LongRunTime', 'IsMissing_FP3LongRunTime',
+    'AirTemp', 'TrackTemp', 'Rainfall', 'IsMissing_Rainfall', 'MissedQuali',
     'SprintFinish', 'CrossAvgFinish', 'RecentAvgPoints',
     'HasSprint',
     'Recent3AvgFinish', 'Recent5AvgFinish', 'DriverAvgTrackFinish',
@@ -596,6 +597,7 @@ def _engineer_features(full_data):
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
+    full_data['IsMissing_Rainfall'] = full_data['Rainfall'].isna().astype(int)
     full_data['Overtakes_CurrentYear'] = pd.to_numeric(
         full_data.get('Overtakes_CurrentYear'), errors='coerce'
     )
@@ -608,6 +610,7 @@ def _engineer_features(full_data):
         full_data.get('BestQualiTime', pd.Series(nan, index=full_data.index)),
         errors='coerce'
     ).dt.total_seconds()
+    full_data['IsMissing_BestQualiTime'] = full_data['BestQualiTime'].isna().astype(int)
     full_data['FP3BestTime'] = pd.to_timedelta(
         full_data.get('FP3BestTime', pd.Series(nan, index=full_data.index)),
         errors='coerce'
@@ -616,6 +619,7 @@ def _engineer_features(full_data):
         full_data.get('FP3LongRunTime', pd.Series(nan, index=full_data.index)),
         errors='coerce'
     ).dt.total_seconds()
+    full_data['IsMissing_FP3LongRunTime'] = full_data['FP3LongRunTime'].isna().astype(int)
     full_data['SprintFinish'] = pd.to_numeric(
         full_data.get('SprintFinish', pd.Series(nan, index=full_data.index)),
         errors='coerce'
@@ -643,10 +647,16 @@ def _engineer_features(full_data):
         full_data['Q3Time'] = pd.to_timedelta(full_data['Q3'], errors='coerce').dt.total_seconds()
     if 'Q1Time' in full_data.columns:
         full_data['Q1Time'] = pd.to_numeric(full_data['Q1Time'], errors='coerce')
+        full_data['IsMissing_Q1Time'] = full_data['Q1Time'].isna().astype(int)
     if 'Q2Time' in full_data.columns:
         full_data['Q2Time'] = pd.to_numeric(full_data['Q2Time'], errors='coerce')
     if 'Q3Time' in full_data.columns:
         full_data['Q3Time'] = pd.to_numeric(full_data['Q3Time'], errors='coerce')
+        full_data['IsMissing_Q3Time'] = full_data['Q3Time'].isna().astype(int)
+    if 'IsMissing_Q1Time' not in full_data.columns:
+        full_data['IsMissing_Q1Time'] = 1
+    if 'IsMissing_Q3Time' not in full_data.columns:
+        full_data['IsMissing_Q3Time'] = 1
     if 'DidNotFinish' not in full_data.columns:
         if 'Status' in full_data.columns:
             full_data['DidNotFinish'] = full_data['Status'].str.lower() != 'finished'
@@ -918,7 +928,7 @@ def _engineer_features(full_data):
     track_med = full_data.groupby(['Circuit', 'Month'])['TrackTemp'].transform('median')
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(track_med)
     full_data['TrackTemp'] = full_data['TrackTemp'].fillna(full_data['TrackTemp'].mean())
-    full_data['RainfallMissing'] = full_data['Rainfall'].isna().astype(int)
+    full_data['IsMissing_Rainfall'] = full_data['Rainfall'].isna().astype(int)
     rain_med = full_data.groupby(['Circuit', 'Month'])['Rainfall'].transform('median')
     full_data['Rainfall'] = full_data['Rainfall'].fillna(rain_med)
     circuit_rain = full_data.groupby('Circuit')['Rainfall'].transform('median')
@@ -965,7 +975,9 @@ def _engineer_features(full_data):
 
     required_columns = [
         'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
-        'MissedQuali', 'SprintFinish', 'HasSprint', 'FP3LongRunTime'
+        'MissedQuali', 'SprintFinish', 'HasSprint', 'FP3LongRunTime',
+        'IsMissing_BestQualiTime', 'IsMissing_FP3LongRunTime',
+        'IsMissing_Q1Time', 'IsMissing_Q3Time', 'IsMissing_Rainfall'
     ]
     for col in required_columns:
         if col not in full_data.columns:

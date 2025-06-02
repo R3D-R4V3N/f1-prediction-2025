@@ -418,6 +418,8 @@ def predict_race(
             'BestQualiTime': best_time,
             'FP3BestTime': fp3_time,
             'FP3LongRunTime': fp3_long_time,
+            'IsMissing_Q1Time': 1 if pd.isna(d.get('Q1')) else 0,
+            'IsMissing_Q3Time': 1 if pd.isna(d.get('Q3')) else 0,
             'DeltaToBestQuali': d.get('DeltaToBestQuali', 0),
             'DeltaToNext': d.get('DeltaToNext', default_delta_next),
             'DeltaToNext_Q3': d.get('DeltaToNext_Q3', default_delta_q3),
@@ -468,6 +470,7 @@ def predict_race(
     )
     pred_df['GridPosition'] = pred_df['GridPosition'].clip(1, 20)
     pred_df['BestQualiTime'] = pd.to_numeric(pred_df['BestQualiTime'], errors='coerce')
+    pred_df['IsMissing_BestQualiTime'] = pred_df['BestQualiTime'].isna().astype(int)
     pred_df['MissedQuali'] = pred_df['BestQualiTime'].isna().astype(int)
     pred_df['BestQualiTime'] = pred_df['BestQualiTime'].fillna(
         race_data['BestQualiTime'].median()
@@ -481,9 +484,10 @@ def predict_race(
         pd.to_numeric(pred_df['FP3BestTime'], errors='coerce')
         .fillna(race_data['FP3BestTime'].mean())
     )
-    pred_df['FP3LongRunTime'] = (
-        pd.to_numeric(pred_df['FP3LongRunTime'], errors='coerce')
-        .fillna(race_data['FP3LongRunTime'].mean())
+    pred_df['FP3LongRunTime'] = pd.to_numeric(pred_df['FP3LongRunTime'], errors='coerce')
+    pred_df['IsMissing_FP3LongRunTime'] = pred_df['FP3LongRunTime'].isna().astype(int)
+    pred_df['FP3LongRunTime'] = pred_df['FP3LongRunTime'].fillna(
+        race_data['FP3LongRunTime'].mean()
     )
     pred_df['SprintFinish'] = pd.to_numeric(pred_df.get('SprintFinish'), errors='coerce')
     pred_df['HasSprint'] = pred_df['HasSprint'].fillna(0).astype(int)
@@ -525,7 +529,7 @@ def predict_race(
     pred_df['TrackTemp'] = pred_df['TrackTemp'].fillna(race_data['TrackTemp'].mean())
 
     pred_df['Rainfall'] = pd.to_numeric(pred_df['Rainfall'], errors='coerce')
-    pred_df['RainfallMissing'] = pred_df['Rainfall'].isna().astype(int)
+    pred_df['IsMissing_Rainfall'] = pred_df['Rainfall'].isna().astype(int)
     rain_map = race_data.groupby(['Circuit', 'Month'])['Rainfall'].median()
     rain_val = rain_map.get((grand_prix, event_month), np.nan)
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(rain_val)
@@ -1077,7 +1081,7 @@ def _build_pred_df(race_data, grand_prix, year, this_race_number, event_month, e
     pred_df["TrackTemp"] = pred_df["TrackTemp"].fillna(race_data["TrackTemp"].mean())
 
     pred_df["Rainfall"] = pd.to_numeric(pred_df["Rainfall"], errors="coerce")
-    pred_df["RainfallMissing"] = pred_df["Rainfall"].isna().astype(int)
+    pred_df["IsMissing_Rainfall"] = pred_df["Rainfall"].isna().astype(int)
     rain_map = race_data.groupby(["Circuit", "Month"])["Rainfall"].median()
     rain_val = rain_map.get((grand_prix, event_month), np.nan)
     pred_df["Rainfall"] = pred_df["Rainfall"].fillna(rain_val)
