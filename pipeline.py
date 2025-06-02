@@ -1201,6 +1201,18 @@ def _build_pred_df(
     if pred_df.empty:
         raise ValueError(f"No driver data available for {year} {grand_prix}")
 
+    # Fallback averages for sprint finish positions
+    if "SprintFinish" in race_data.columns:
+        driver_sprint_mean = (
+            race_data.groupby("DriverNumber")["SprintFinish"].mean().dropna().to_dict()
+        )
+        team_sprint_mean = (
+            race_data.groupby("HistoricalTeam")["SprintFinish"].mean().dropna().to_dict()
+        )
+    else:
+        driver_sprint_mean = {}
+        team_sprint_mean = {}
+
     pred_df["GridPosition"] = (
         pd.to_numeric(pred_df["GridPosition"], errors="coerce").fillna(20)
     )
