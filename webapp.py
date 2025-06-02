@@ -1,4 +1,5 @@
 import logging
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,6 +12,10 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+FEATURE_IMPORTANCE_PATH = os.path.join(
+    os.path.dirname(__file__), 'model_info', 'feature_importance.png'
+)
 
 
 @st.cache_data(show_spinner=False)
@@ -55,9 +60,9 @@ if st.button('Predict Results'):
         st.dataframe(results[['Final_Position', 'Driver', 'Team', 'Grid']])
 
         if st.checkbox('Show Feature Importance'):
-            try:
-                st.image('model_info/feature_importance.png')
-            except Exception:
+            if os.path.exists(FEATURE_IMPORTANCE_PATH):
+                st.image(FEATURE_IMPORTANCE_PATH)
+            else:
                 st.info('Feature importance plot not available')
 
         if debug_mode:
