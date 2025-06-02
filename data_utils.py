@@ -762,7 +762,11 @@ def _engineer_features(full_data):
     circuit_rain = full_data.groupby('Circuit')['Rainfall'].transform('median')
     full_data['Rainfall'] = full_data['Rainfall'].fillna(circuit_rain)
     full_data['Rainfall'] = full_data['Rainfall'].fillna(full_data['Rainfall'].median())
-    full_data = full_data.drop(columns=['Month', 'Date'], errors='ignore')
+    # Retain the ``Month`` column for downstream processing. ``Date`` is no
+    # longer needed once the month has been extracted, so drop only that
+    # column.  Keeping ``Month`` allows other parts of the pipeline to
+    # perform month-based aggregations without recalculating it.
+    full_data = full_data.drop(columns=['Date'], errors='ignore')
     full_data['WeightedAvgOvertakes'] = full_data['WeightedAvgOvertakes'].fillna(
         full_data['WeightedAvgOvertakes'].mean())
     full_data['MissedQuali'] = full_data['BestQualiTime'].isna().astype(int)
