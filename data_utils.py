@@ -125,6 +125,18 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     q_res["MissedQ3"] = q_res["Q3"].isna().astype(int)
     q_res["MissedQ2"] = q_res["Q2"].isna().astype(int)
 
+    status_col = "Status" if "Status" in qdf.columns else None
+    if status_col:
+        q_res["StatusQuali"] = qdf[status_col].astype(str)
+    else:
+        q_res["StatusQuali"] = "Q3"
+    q_res.loc[q_res["Q3"].isna(), "StatusQuali"] = "Q2"
+    q_res.loc[q_res["Q2"].isna(), "StatusQuali"] = "Q1"
+    q_res.loc[q_res["Q1"].isna(), "StatusQuali"] = "DNQ"
+    if status_col:
+        q_res.loc[qdf[status_col].str.contains("DNS", na=False), "StatusQuali"] = "DNS"
+        q_res.loc[qdf[status_col].str.contains("DSQ", na=False), "StatusQuali"] = "DSQ"
+
     q_res["DeltaToNext_Q3"] = nan
     q_res["DeltaToNext_Q2"] = nan
 
@@ -363,7 +375,7 @@ race_cols = [
     'DeltaToNext_Q3', 'DeltaToNext_Q2', 'MissedQ3', 'MissedQ2',
     'IsMissing_Q3Time', 'IsMissing_Q1Time',
     'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
-    'QualiOverGrid',
+    'GridMissed', 'QualiOverGrid',
     'FP3BestTime', 'FP3LongRunTime', 'IsMissing_FP3LongRunTime',
     'AirTemp', 'TrackTemp', 'Rainfall', 'IsMissing_Rainfall', 'MissedQuali',
     'SprintFinish', 'CrossAvgFinish', 'RecentAvgPoints',
@@ -424,7 +436,10 @@ def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["DidNotFinish"] = df["Position"] > 20
     df["Position"] = df["Position"].clip(1, 20)
-    df["GridPosition"] = df["GridPosition"].clip(1, 20)
+    df["GridMissed"] = df["GridPosition"].isna() | (df["GridPosition"] > 20)
+    df["GridMissed"] = df["GridMissed"].astype(int)
+    df["GridPosition"] = df["GridPosition"].fillna(20)
+    df["GridPosition"] = df["GridPosition"].clip(lower=1)
     if "SprintFinish" in df.columns:
         df["SprintFinish"] = df["SprintFinish"].clip(1, 20)
     return df
@@ -645,11 +660,9 @@ def _engineer_features(full_data):
         full_data['GridPosition'] if 'GridPosition' in full_data.columns
         else pd.Series(nan, index=full_data.index)
     )
-    full_data['GridPosition'] = (
-        pd.to_numeric(grid_series, errors='coerce')
-        .fillna(20)
-        .clip(1, 20)
-    )
+    grid_vals = pd.to_numeric(grid_series, errors='coerce')
+    full_data['GridMissed'] = (grid_vals.isna() | (grid_vals > 20)).astype(int)
+    full_data['GridPosition'] = grid_vals.fillna(20).clip(lower=1)
     full_data['AirTemp'] = pd.to_numeric(full_data.get('AirTemp'), errors='coerce')
     full_data['TrackTemp'] = pd.to_numeric(full_data.get('TrackTemp'), errors='coerce')
     full_data['Rainfall'] = pd.to_numeric(full_data.get('Rainfall'), errors='coerce')
@@ -1055,6 +1068,7 @@ def _engineer_features(full_data):
     full_data['IsStreet'] = full_data['IsStreet'].fillna(0)
     full_data['DownforceLevel'] = full_data['DownforceLevel'].fillna(1)
     full_data['GridDropCount'] = full_data['GridDropCount'].fillna(0)
+    full_data['GridMissed'] = full_data['GridMissed'].fillna(0)
     full_data['DeltaToBestQuali'] = full_data['DeltaToBestQuali'].fillna(full_data['DeltaToBestQuali'].mean())
     full_data['DeltaToNext'] = full_data['DeltaToNext'].fillna(DELTA_NEXT_PENALTY)
     full_data['DeltaToNext_Q3'] = full_data['DeltaToNext_Q3'].fillna(DELTA_NEXT_PENALTY)
@@ -1087,7 +1101,8 @@ def _engineer_features(full_data):
         'DeltaToTeammateQuali', 'QualiSessionGain', 'GridDropCount',
         'MissedQuali', 'SprintFinish', 'HasSprint', 'FP3LongRunTime',
         'IsMissing_BestQualiTime', 'IsMissing_FP3LongRunTime',
-        'IsMissing_Q1Time', 'IsMissing_Q3Time', 'IsMissing_Rainfall'
+        'IsMissing_Q1Time', 'IsMissing_Q3Time', 'IsMissing_Rainfall',
+        'GridMissed'
     ]
     for col in required_columns:
         if col not in full_data.columns:
