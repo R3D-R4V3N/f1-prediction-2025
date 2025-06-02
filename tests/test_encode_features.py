@@ -18,6 +18,7 @@ def test_encoding_unknown_circuit_and_team():
         "DeltaToTeammateQuali": [0.2],
         "QualiSessionGain": [1],
         "GridDropCount": [0],
+        "GridMissed": [0],
         "FP3BestTime": [pd.to_timedelta("00:01:15")],
         "FP3LongRunTime": [pd.to_timedelta("00:01:18")],
         "AirTemp": [25.0],

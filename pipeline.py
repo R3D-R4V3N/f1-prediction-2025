@@ -476,12 +476,20 @@ def predict_race(
             podiums = stats['DriverTrackPodiums']
             dnfs = stats['DriverTrackDNFs']
 
+        penalty = int(d.get('Penalty', 0))
+        grid_missed = 0
         if qual_results is not None and 'GridPosition' in d and pd.notna(d['GridPosition']):
             grid_pos = int(d['GridPosition'])
             best_time = d['BestTime']
+            if d.get('StatusQuali') != 'Q3':
+                grid_pos = 20 + penalty
+                grid_missed = 1
+            else:
+                grid_pos += penalty
         else:
-            grid_pos = 20
+            grid_pos = 20 + penalty
             best_time = default_best_q
+            grid_missed = 1
 
         if fp3_results is not None and 'FP3BestTime' in d and pd.notna(d['FP3BestTime']):
             fp3_time = d['FP3BestTime']
@@ -513,6 +521,7 @@ def predict_race(
             recent5_avg = past_races['Position'].tail(5).mean()
         pred_rows.append({
             'GridPosition': grid_pos,
+            'GridMissed': grid_missed,
             'Season': year,
             'ExperienceCount': exp_count,
             'IsRookie': 1 if exp_count == 1 else 0,
@@ -572,7 +581,8 @@ def predict_race(
         pd.to_numeric(pred_df['GridPosition'], errors='coerce')
         .fillna(20)
     )
-    pred_df['GridPosition'] = pred_df['GridPosition'].clip(1, 20)
+    pred_df['GridMissed'] = pd.to_numeric(pred_df['GridMissed'], errors='coerce').fillna(0).astype(int)
+    pred_df['GridPosition'] = pred_df['GridPosition'].clip(lower=1)
     pred_df['BestQualiTime'] = pd.to_numeric(pred_df['BestQualiTime'], errors='coerce')
     pred_df['IsMissing_BestQualiTime'] = pred_df['BestQualiTime'].isna().astype(int)
     pred_df['MissedQuali'] = pred_df['BestQualiTime'].isna().astype(int)
@@ -1059,12 +1069,20 @@ def _build_pred_df(
             podiums = stats["DriverTrackPodiums"]
             dnfs = stats["DriverTrackDNFs"]
 
+        penalty = int(d.get("Penalty", 0))
+        grid_missed = 0
         if qual_results is not None and "GridPosition" in d and pd.notna(d["GridPosition"]):
             grid_pos = int(d["GridPosition"])
             best_time = d["BestTime"]
+            if d.get("StatusQuali") != "Q3":
+                grid_pos = 20 + penalty
+                grid_missed = 1
+            else:
+                grid_pos += penalty
         else:
-            grid_pos = 20
+            grid_pos = 20 + penalty
             best_time = default_best_q
+            grid_missed = 1
 
         if fp3_results is not None and "FP3BestTime" in d and pd.notna(d["FP3BestTime"]):
             fp3_time = d["FP3BestTime"]
@@ -1098,6 +1116,7 @@ def _build_pred_df(
         pred_rows.append(
             {
                 "GridPosition": grid_pos,
+                "GridMissed": grid_missed,
                 "Season": year,
                 "ExperienceCount": exp_count,
                 "IsRookie": 1 if exp_count == 1 else 0,
@@ -1154,7 +1173,8 @@ def _build_pred_df(
     pred_df["GridPosition"] = (
         pd.to_numeric(pred_df["GridPosition"], errors="coerce").fillna(20)
     )
-    pred_df["GridPosition"] = pred_df["GridPosition"].clip(1, 20)
+    pred_df["GridMissed"] = pd.to_numeric(pred_df["GridMissed"], errors="coerce").fillna(0).astype(int)
+    pred_df["GridPosition"] = pred_df["GridPosition"].clip(lower=1)
     pred_df["BestQualiTime"] = pd.to_numeric(pred_df["BestQualiTime"], errors="coerce")
     pred_df["MissedQuali"] = pred_df["BestQualiTime"].isna().astype(int)
     pred_df["BestQualiTime"] = pred_df["BestQualiTime"].fillna(
