@@ -53,6 +53,12 @@ If you want live weather predictions, set the `OPENWEATHER_API_KEY` environment 
 
    By default this runs `predict_race` for the Chinese Grand Prix in 2025. Edit the last lines of `pipeline.py` or call the function from Python to choose another event.
 
+   Set `retrain=True` to force the model to be trained again instead of loading a cached version.
+
+   ```python
+   predict_race('Spanish Grand Prix', year=2025, retrain=True)
+   ```
+
 2. **Streamlit web app**
 
    ```bash
