@@ -489,6 +489,9 @@ def predict_race(
     pred_df['BestQualiTime'] = pred_df['BestQualiTime'].fillna(
         race_data['BestQualiTime'].median()
     )
+    pred_df['QualiRank'] = pred_df['BestQualiTime'].rank(method='dense', ascending=True)
+    pred_df['GridRank'] = pred_df['GridPosition']
+    pred_df['QualiOverGrid'] = pred_df['QualiRank'] / pred_df['GridRank']
     pred_df['DeltaToNext'] = pd.to_numeric(pred_df['DeltaToNext'], errors='coerce').fillna(default_delta_next)
     pred_df['DeltaToNext_Q3'] = pd.to_numeric(pred_df['DeltaToNext_Q3'], errors='coerce').fillna(default_delta_q3)
     pred_df['DeltaToNext_Q2'] = pd.to_numeric(pred_df['DeltaToNext_Q2'], errors='coerce').fillna(default_delta_q2)
