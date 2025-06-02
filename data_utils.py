@@ -473,13 +473,13 @@ def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
                 val = nan
                 overtake_years = overtake_map.get(circ, {})
                 if isinstance(overtake_years, dict):
-                    last_year = season - 1
-                    val = overtake_years.get(last_year, nan)
+                    val = overtake_years.get(season, nan)
                     if pd.isna(val):
                         weights = [0.6, 0.3, 0.1]
                         vals = []
                         wts = []
-                        for w, yr in zip(weights, [last_year, last_year - 1, last_year - 2]):
+                        prior_years = sorted([y for y in overtake_years if y < season], reverse=True)
+                        for w, yr in zip(weights, prior_years):
                             v = overtake_years.get(yr)
                             if v is not None and not pd.isna(v):
                                 vals.append(v * w)
