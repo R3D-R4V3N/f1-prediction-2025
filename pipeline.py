@@ -673,9 +673,15 @@ def predict_race(
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(circuit_rain)
     pred_df['Rainfall'] = pred_df['Rainfall'].fillna(race_data['Rainfall'].median())
 
-    pred_df['SafetyCarAvg'] = pd.to_numeric(pred_df['SafetyCarAvg'], errors='coerce')
-    sc_avg = default_safetycar
-    pred_df['SafetyCarAvg'] = pred_df['SafetyCarAvg'].fillna(sc_avg)
+    sc_vals = [v for d in safetycar_map.values() for v in d.values()]
+    global_sc = float(np.mean(sc_vals)) if sc_vals else np.nan
+    circ_sc_vals = safetycar_map.get(grand_prix, {})
+    sc_avg = float(np.mean(list(circ_sc_vals.values()))) if circ_sc_vals else global_sc
+    if 'SafetyCarAvg' not in pred_df.columns:
+        pred_df['SafetyCarAvg'] = sc_avg
+    else:
+        pred_df['SafetyCarAvg'] = pd.to_numeric(pred_df['SafetyCarAvg'], errors='coerce')
+        pred_df['SafetyCarAvg'] = pred_df['SafetyCarAvg'].fillna(sc_avg)
     pred_df['LikelihoodSC'] = pd.to_numeric(pred_df['LikelihoodSC'], errors='coerce')
     pred_df['LikelihoodSC'] = pred_df['LikelihoodSC'].fillna(
         SC_CORR_MAP.get(grand_prix, SC_CORR_GLOBAL)
