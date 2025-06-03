@@ -682,10 +682,14 @@ def predict_race(
     else:
         pred_df['SafetyCarAvg'] = pd.to_numeric(pred_df['SafetyCarAvg'], errors='coerce')
         pred_df['SafetyCarAvg'] = pred_df['SafetyCarAvg'].fillna(sc_avg)
-    pred_df['LikelihoodSC'] = pd.to_numeric(pred_df['LikelihoodSC'], errors='coerce')
-    pred_df['LikelihoodSC'] = pred_df['LikelihoodSC'].fillna(
-        SC_CORR_MAP.get(grand_prix, SC_CORR_GLOBAL)
-    )
+
+    if 'LikelihoodSC' not in pred_df.columns:
+        pred_df['LikelihoodSC'] = SC_CORR_MAP.get(grand_prix, SC_CORR_GLOBAL)
+    else:
+        pred_df['LikelihoodSC'] = pd.to_numeric(pred_df['LikelihoodSC'], errors='coerce')
+        pred_df['LikelihoodSC'] = pred_df['LikelihoodSC'].fillna(
+            SC_CORR_MAP.get(grand_prix, SC_CORR_GLOBAL)
+        )
     pred_df = pred_df.drop(columns=['Month'], errors='ignore')
 
     pred_df.to_csv("prediction_input.csv", index=False)
