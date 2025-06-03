@@ -445,11 +445,33 @@ def _clean_historical_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _load_historical_data(seasons, overtake_map=None, max_round_by_season=None):
+def _load_local_history(csv_path, seasons, max_round_by_season=None):
+    """Return pre-generated race data from ``csv_path`` if available."""
+    if not os.path.exists(csv_path):
+        return None
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception:
+        return None
+    df = df[df["Season"].isin(seasons)]
+    if max_round_by_season:
+        for yr, limit in max_round_by_season.items():
+            df = df[~((df["Season"] == yr) & (df["RaceNumber"] > limit))]
+    return df.reset_index(drop=True)
+
+
+def _load_historical_data(
+    seasons, overtake_map=None, max_round_by_season=None, *, local_file="prediction_data.csv"
+):
     """Return race results up to the given round for each season."""
     if overtake_map is None:
         overtake_map = OVERTAKE_AVERAGES
     max_round_by_season = max_round_by_season or {}
+
+    local_df = _load_local_history(local_file, seasons, max_round_by_season)
+    if local_df is not None and not local_df.empty:
+        return local_df
+
     race_data = []
     for season in seasons:
         try:
@@ -1325,6 +1347,7 @@ __all__ = [
     'CIRCUIT_COORDS',
     'fetch_weather',
     '_clean_historical_data',
+    '_load_local_history',
     '_load_historical_data',
     '_add_driver_team_info',
     '_engineer_features',
