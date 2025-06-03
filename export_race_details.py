@@ -86,17 +86,20 @@ def _fetch_session_data(
             df[col] = df[col].apply(_to_seconds)
         df['BestTime'] = df[['Q1', 'Q2', 'Q3']].min(axis=1)
         df.rename(columns={'Abbreviation': 'Driver'}, inplace=True)
+        df['LongRunTime'] = None
     elif session_code == 'SQ':
         df = session.results[['Abbreviation', 'SQ1', 'SQ2', 'SQ3']].copy()
         for col in ['SQ1', 'SQ2', 'SQ3']:
             df[col] = df[col].apply(_to_seconds)
         df['BestTime'] = df[['SQ1', 'SQ2', 'SQ3']].min(axis=1)
         df.rename(columns={'Abbreviation': 'Driver'}, inplace=True)
+        df['LongRunTime'] = None
     else:  # Race or Sprint session
         df = session.results[['Abbreviation', 'Position']].rename(
             columns={'Abbreviation': 'Driver', 'Position': 'FinishPosition'}
         )
         df['BestTime'] = None
+        df['LongRunTime'] = None
 
     for col in ['Q1', 'Q2', 'Q3', 'SQ1', 'SQ2', 'SQ3']:
         if col not in df.columns:
@@ -155,6 +158,7 @@ def export_race_details(year: int, grand_prix: str) -> str:
                 'Date': [''],
                 'Driver': [None],
                 'BestTime': [None],
+                'LongRunTime': [None],
                 'FinishPosition': [None],
                 'Q1': [None],
                 'Q2': [None],
