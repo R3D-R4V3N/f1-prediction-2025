@@ -44,3 +44,18 @@ def test_engineer_features_without_date():
 
     out = _engineer_features(data.copy())
     assert "Month" in out.columns
+
+
+def test_engineer_features_without_embeddings():
+    data = pd.DataFrame({
+        "Season": [2024, 2024],
+        "RaceNumber": [1, 1],
+        "DriverNumber": [1, 2],
+        "Team": ["A", "B"],
+        "Position": [5, 6],
+        "Circuit": ["X", "X"],
+    })
+
+    out = _engineer_features(data.copy())
+    assert "CircuitEmbed1" in out.columns
+    assert "CircuitEmbed2" in out.columns
