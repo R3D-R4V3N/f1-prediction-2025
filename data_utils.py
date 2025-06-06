@@ -643,16 +643,19 @@ def _load_historical_data(
     return pd.concat(race_data)
 
 
-def _add_driver_team_info(full_data, seasons):
+def _add_driver_team_info(full_data, seasons, max_round_by_season=None):
     """Attach driver team information using historical race results.
 
     Driver line-ups can change mid-season.  To capture this the function
     collects the team for every race in ``seasons`` and, for each row in
     ``full_data``, assigns the team from the latest race at or before that
-    event.
+    event.  When ``max_round_by_season`` is provided only rounds up to the
+    specified value are queried for each season.
     """
 
     season_history = {}
+
+    max_round_by_season = max_round_by_season or {}
 
     for season in seasons:
         try:
@@ -662,6 +665,10 @@ def _add_driver_team_info(full_data, seasons):
             )
         except Exception:
             continue
+
+        if season in max_round_by_season:
+            limit = max_round_by_season[season]
+            rounds = [r for r in rounds if r <= limit]
 
         race_map = {}
         for rnd in sorted(rounds):
