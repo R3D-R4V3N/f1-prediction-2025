@@ -26,6 +26,27 @@ Cache.enable_cache(CACHE_DIR)
 DELTA_NEXT_PENALTY = 5.0
 
 
+def _load_driver_lookup(path: str = "driver_lookup.csv") -> pd.DataFrame:
+    """Return driver information indexed by abbreviation."""
+    if not os.path.exists(path):
+        logger.warning("driver lookup file %s not found", path)
+        cols = ["Abbreviation", "DriverNumber", "IsRookie", "ExperienceCount"]
+        return pd.DataFrame(columns=cols).set_index("Abbreviation")
+    try:
+        df = pd.read_csv(path)
+    except Exception as err:  # pragma: no cover - file issues
+        logger.warning("could not read %s: %s", path, err)
+        cols = ["Abbreviation", "DriverNumber", "IsRookie", "ExperienceCount"]
+        return pd.DataFrame(columns=cols).set_index("Abbreviation")
+    for col in ["DriverNumber", "IsRookie", "ExperienceCount"]:
+        df[col] = pd.to_numeric(df.get(col), errors="coerce")
+    if "Abbreviation" in df.columns:
+        df.set_index("Abbreviation", inplace=True)
+    else:
+        df.index = pd.Index([], name="Abbreviation")
+    return df
+
+
 def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
     """Return the driver lineup for a given event using FastF1."""
     schedule = get_event_schedule(year)
@@ -45,6 +66,7 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
             )
             info = res_df[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
             info.rename(columns={"TeamName": "Team"}, inplace=True)
+            info.set_index("Abbreviation", inplace=True)
             return info
     except Exception:
         pass
@@ -57,6 +79,7 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
         info = entry_list[["DriverNumber", "Abbreviation", "FullName", "TeamName"]].copy()
         info.rename(columns={"TeamName": "Team"}, inplace=True)
         if not info.empty:
+            info.set_index("Abbreviation", inplace=True)
             return info
     except Exception:
         pass
@@ -79,11 +102,13 @@ def _get_event_drivers(year: int, grand_prix: str) -> pd.DataFrame:
                     "Team": r["Constructor"].get("name", ""),
                 })
             if rows:
-                return pd.DataFrame(rows)
+                df = pd.DataFrame(rows)
+                df.set_index("Abbreviation", inplace=True)
+                return df
     except Exception:
         pass
 
-    return pd.DataFrame(columns=["DriverNumber", "Abbreviation", "FullName", "Team"])
+    return pd.DataFrame(columns=["DriverNumber", "FullName", "Team"], index=pd.Index([], name="Abbreviation"))
 
 
 def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
@@ -152,6 +177,7 @@ def _get_qualifying_results(year: int, grand_prix: str) -> pd.DataFrame:
     q_res["DeltaToNext"] = q_res["DeltaToNext_Q3"]
     q_res.loc[q_res["MissedQ3"] == 1, "DeltaToNext"] = q3_penalty
 
+    q_res.set_index("Abbreviation", inplace=True)
     return q_res
 
 
@@ -171,16 +197,19 @@ def _get_fp3_results(year: int, grand_prix: str) -> pd.DataFrame:
             "LongRunTime": "FP3LongRunTime",
         }
     )
-    return df[
-        [
-            "Abbreviation",
-            "FP3BestTime",
-            "FP3LongRunTime",
-            "AvgAirTemp",
-            "AvgTrackTemp",
-            "MaxRainfall",
-        ]
+    cols = [
+        "Abbreviation",
+        "FP3BestTime",
+        "FP3LongRunTime",
+        "AvgAirTemp",
+        "AvgTrackTemp",
+        "MaxRainfall",
     ]
+    out = df[cols].copy()
+    for c in ["FP3BestTime", "FP3LongRunTime"]:
+        out[c] = pd.to_timedelta(out[c], errors="coerce").dt.total_seconds()
+    out.set_index("Abbreviation", inplace=True)
+    return out
 
 
 def _get_sprint_results(year: int, grand_prix: str) -> pd.DataFrame:
@@ -195,11 +224,14 @@ def _get_sprint_results(year: int, grand_prix: str) -> pd.DataFrame:
         session = get_session(year, round_number, "S")
         session.load()
         sdf = pd.DataFrame(session.results.values, columns=session.results.columns)
-        return sdf[["DriverNumber", "Abbreviation", "Position"]].rename(
+        out = sdf[["DriverNumber", "Abbreviation", "Position"]].rename(
             columns={"Position": "SprintFinish"}
         )
+        out["SprintFinish"] = pd.to_numeric(out["SprintFinish"], errors="coerce")
+        out.set_index("Abbreviation", inplace=True)
+        return out
     except Exception:
-        return pd.DataFrame(columns=["DriverNumber", "Abbreviation", "SprintFinish"])
+        return pd.DataFrame(columns=["DriverNumber", "SprintFinish"], index=pd.Index([], name="Abbreviation"))
 
 
 def _load_overtake_stats(path: str = "overtake_stats.csv") -> dict:
@@ -1332,6 +1364,7 @@ def _season_driver_team_stats(race_data: pd.DataFrame, year: int):
 
 
 __all__ = [
+    '_load_driver_lookup',
     '_get_event_drivers',
     '_get_qualifying_results',
     '_get_fp3_results',

@@ -19,6 +19,7 @@ from data_utils import (
     _encode_features,
     _load_overtake_stats,
     _load_safetycar_stats,
+    _load_driver_lookup,
     _get_event_drivers,
     _get_qualifying_results,
     _get_fp3_results,
@@ -269,6 +270,13 @@ def predict_race(
         event_day,
         safetycar_map,
     )
+
+    nunique = pred_df.nunique(dropna=True)
+    const_cols = nunique[nunique <= 1].index.tolist()
+    if const_cols:
+        pred_df.iloc[[0]][const_cols].to_csv("race_info.csv", index=False)
+        pred_df = pred_df.drop(columns=const_cols)
+
     pred_df.to_csv("prediction_input.csv", index=False)
 
     race_pred_features, _, _, _ = _encode_features(
@@ -435,19 +443,10 @@ def _build_pred_df(
         else:
             race_data = race_data.assign(Month=np.nan)
 
-    driver_lookup = {}
-    try:
-        with open("driver_lookup.csv", newline="", encoding="utf-8") as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                abbr = row.get("Abbreviation")
-                num = row.get("DriverNumber")
-                if abbr and num:
-                    driver_lookup[abbr.strip()] = int(num)
-    except Exception as e:
-        logger.error("Kon driver_lookup.csv niet inlezen: %s", e)
+    driver_lookup = _load_driver_lookup()
     try:
         drivers_df = _get_qualifying_results(year, grand_prix)
+        drivers_df = drivers_df.join(driver_lookup, how="left")
         if drivers_df.empty or "DriverNumber" not in drivers_df.columns:
             raise ValueError("Geen valide DriverNumber in kwalificatiegegevens")
         drivers_df = drivers_df[drivers_df["BestTime"].notna()]
@@ -458,14 +457,14 @@ def _build_pred_df(
         )
         try:
             drivers_df = _get_event_drivers(year, grand_prix)
-            drivers_df["DriverNumber"] = drivers_df["Abbreviation"].map(driver_lookup)
-            missing = drivers_df[drivers_df["DriverNumber"].isna()]["Abbreviation"].tolist()
+            drivers_df = drivers_df.join(driver_lookup, how="left")
+            missing = drivers_df[drivers_df["DriverNumber"].isna()].index.tolist()
             if missing:
                 logger.warning("Kon geen DriverNumber vinden voor afkortingen: %s", missing)
             qual_results = None
         except Exception as e2:
             logger.error("_get_event_drivers mislukt voor %d %s: %s", year, grand_prix, e2)
-            drivers_df = pd.DataFrame(columns=["Abbreviation", "DriverNumber"])
+            drivers_df = pd.DataFrame(columns=["DriverNumber"], index=pd.Index([], name="Abbreviation"))
             qual_results = None
 
     drivers_df["DriverNumber"] = pd.to_numeric(drivers_df["DriverNumber"], errors="coerce")
@@ -475,7 +474,7 @@ def _build_pred_df(
         if "DriverNumber" not in fp3_results.columns or fp3_results["DriverNumber"].isna().all():
             raise ValueError("Geen valide DriverNumber in FP3-gegevens")
         if qual_results is not None:
-            qual_results = qual_results.merge(fp3_results, on="Abbreviation", how="left")
+            qual_results = qual_results.join(fp3_results, how="left")
     except Exception as e:
         logger.warning("FP3 ophalen mislukt voor %d %s: %s", year, grand_prix, e)
         fp3_results = None
@@ -484,8 +483,8 @@ def _build_pred_df(
         sprint_results = _get_sprint_results(year, grand_prix)
         has_sprint = not sprint_results.empty
         if qual_results is not None:
-            qual_results = qual_results.merge(sprint_results, on="Abbreviation", how="left")
-        drivers_df = drivers_df.merge(sprint_results, on="Abbreviation", how="left")
+            qual_results = qual_results.join(sprint_results, how="left")
+        drivers_df = drivers_df.join(sprint_results, how="left")
     except Exception as e:
         logger.warning("Sprint ophalen mislukt voor %d %s: %s", year, grand_prix, e)
         sprint_results = pd.DataFrame()
@@ -654,20 +653,19 @@ def _build_pred_df(
         qual_results["GridDropCount"] = 0
 
     driver_iter = qual_results if qual_results is not None and not qual_results.empty else drivers_df
-    overall_avg_pos = race_data["Position"].mean()
-    rookie_avg_pos = race_data[race_data["ExperienceCount"] == 1]["Position"].mean()
     for _, d in driver_iter.iterrows():
         driver_num = d.get("DriverNumber")
-        if pd.notna(driver_num):
+        exp_count = d.get("ExperienceCount")
+        if pd.isna(exp_count) and pd.notna(driver_num):
             try:
                 prev_count = race_data[race_data["DriverNumber"] == int(driver_num)].shape[0]
                 exp_count = prev_count + 1
             except Exception as e:
                 logger.warning("Fout bij tellen eerdere races voor driver %s: %s", driver_num, e)
-                exp_count = 1
-        else:
+                exp_count = np.nan
+        elif pd.isna(exp_count):
             logger.error("DriverNumber ontbreekt voor rij: %s", d.get("Abbreviation"))
-            exp_count = 1
+            exp_count = np.nan
         team_name = d["Team"]
         team_same_season = race_data[
             (race_data["HistoricalTeam"] == team_name)
@@ -706,9 +704,9 @@ def _build_pred_df(
             else None
         )
         if stats is None:
-            avg_track = race_data["DriverAvgTrackFinish"].mean()
-            podiums = 0.0
-            dnfs = 0.0
+            avg_track = np.nan
+            podiums = np.nan
+            dnfs = np.nan
         else:
             avg_track = stats["DriverAvgTrackFinish"]
             podiums = stats["DriverTrackPodiums"]
@@ -736,7 +734,7 @@ def _build_pred_df(
 
         driver_num = d.get("DriverNumber")
         if pd.isna(driver_num):
-            driver_num = -1
+            driver_num = np.nan
         else:
             driver_num = int(driver_num)
         past_races = race_data[
@@ -748,10 +746,10 @@ def _build_pred_df(
         ].sort_values(["Season", "RaceNumber"])
 
         if past_races.empty:
-            cross_avg = rookie_avg_pos
-            recent_avg_pts = 0.0
-            recent3_avg = rookie_avg_pos
-            recent5_avg = rookie_avg_pos
+            cross_avg = np.nan
+            recent_avg_pts = np.nan
+            recent3_avg = np.nan
+            recent5_avg = np.nan
         else:
             cross_avg = past_races["Position"].tail(5).mean()
             recent_avg_pts = past_races["Points"].tail(5).mean()
@@ -764,7 +762,7 @@ def _build_pred_df(
                 "DriverNumber": driver_num,
                 "Season": year,
                 "ExperienceCount": exp_count,
-                "IsRookie": 1 if exp_count == 1 else 0,
+                "IsRookie": (1 if exp_count == 1 else 0) if pd.notna(exp_count) else np.nan,
                 "TeamAvgPosition": team_avg_pos,
                 "CrossAvgFinish": cross_avg,
                 "RecentAvgPoints": recent_avg_pts,
