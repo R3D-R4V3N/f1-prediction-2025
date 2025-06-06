@@ -1092,7 +1092,11 @@ def _engineer_features(full_data):
     )
     full_data['TeamAvgPosition'] = full_data['TeamAvgPosition'].fillna(
         full_data['TeamAvgPosition'].mean())
-    full_data['Month'] = pd.to_datetime(full_data['Date'], errors='coerce').dt.month
+    if 'Month' not in full_data.columns:
+        if 'Date' in full_data.columns:
+            full_data['Month'] = pd.to_datetime(full_data['Date'], errors='coerce').dt.month
+        else:
+            full_data['Month'] = nan
     air_med = full_data.groupby(['Circuit', 'Month'])['AirTemp'].transform('median')
     full_data['AirTemp'] = full_data['AirTemp'].fillna(air_med)
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
