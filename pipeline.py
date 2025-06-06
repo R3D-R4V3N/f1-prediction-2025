@@ -116,7 +116,7 @@ def predict_race(
     race_data['DriverNumber'] = pd.to_numeric(race_data['DriverNumber'], errors='coerce')
     qual_results = None
     fp3_results = None
-    race_data = _add_driver_team_info(race_data, seasons)
+    race_data = _add_driver_team_info(race_data, seasons, limit_rounds)
     race_data = race_data.drop(columns=['Team'], errors='ignore')
     race_data = race_data.loc[
         ~((race_data['Season'] == year) & (race_data['RaceNumber'] >= this_race_number))
