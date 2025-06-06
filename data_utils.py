@@ -643,16 +643,19 @@ def _load_historical_data(
     return pd.concat(race_data)
 
 
-def _add_driver_team_info(full_data, seasons):
+def _add_driver_team_info(full_data, seasons, max_round_by_season=None):
     """Attach driver team information using historical race results.
 
     Driver line-ups can change mid-season.  To capture this the function
     collects the team for every race in ``seasons`` and, for each row in
     ``full_data``, assigns the team from the latest race at or before that
-    event.
+    event.  When ``max_round_by_season`` is provided only rounds up to the
+    specified value are queried for each season.
     """
 
     season_history = {}
+
+    max_round_by_season = max_round_by_season or {}
 
     for season in seasons:
         try:
@@ -662,6 +665,10 @@ def _add_driver_team_info(full_data, seasons):
             )
         except Exception:
             continue
+
+        if season in max_round_by_season:
+            limit = max_round_by_season[season]
+            rounds = [r for r in rounds if r <= limit]
 
         race_map = {}
         for rnd in sorted(rounds):
@@ -1085,7 +1092,11 @@ def _engineer_features(full_data):
     )
     full_data['TeamAvgPosition'] = full_data['TeamAvgPosition'].fillna(
         full_data['TeamAvgPosition'].mean())
-    full_data['Month'] = pd.to_datetime(full_data['Date'], errors='coerce').dt.month
+    if 'Month' not in full_data.columns:
+        if 'Date' in full_data.columns:
+            full_data['Month'] = pd.to_datetime(full_data['Date'], errors='coerce').dt.month
+        else:
+            full_data['Month'] = nan
     air_med = full_data.groupby(['Circuit', 'Month'])['AirTemp'].transform('median')
     full_data['AirTemp'] = full_data['AirTemp'].fillna(air_med)
     full_data['AirTemp'] = full_data['AirTemp'].fillna(full_data['AirTemp'].mean())
@@ -1141,8 +1152,16 @@ def _engineer_features(full_data):
     full_data['NumCorners'] = full_data['NumCorners'].fillna(full_data['NumCorners'].median())
     full_data['DRSZones'] = full_data['DRSZones'].fillna(full_data['DRSZones'].median())
     full_data['StdLapTime'] = full_data['StdLapTime'].fillna(full_data['StdLapTime'].mean())
-    full_data['CircuitEmbed1'] = full_data['CircuitEmbed1'].fillna(full_data['CircuitEmbed1'].mean())
-    full_data['CircuitEmbed2'] = full_data['CircuitEmbed2'].fillna(full_data['CircuitEmbed2'].mean())
+    if 'CircuitEmbed1' not in full_data.columns:
+        full_data['CircuitEmbed1'] = nan
+    if 'CircuitEmbed2' not in full_data.columns:
+        full_data['CircuitEmbed2'] = nan
+    full_data['CircuitEmbed1'] = full_data['CircuitEmbed1'].fillna(
+        full_data['CircuitEmbed1'].mean()
+    )
+    full_data['CircuitEmbed2'] = full_data['CircuitEmbed2'].fillna(
+        full_data['CircuitEmbed2'].mean()
+    )
     full_data['SafetyCarAvg'] = full_data['SafetyCarAvg'].fillna(full_data['SafetyCarAvg'].mean())
     full_data['LikelihoodSC'] = full_data['LikelihoodSC'].fillna(SC_CORR_GLOBAL)
     full_data['DriverChampPoints'] = full_data['DriverChampPoints'].fillna(0)
