@@ -1332,9 +1332,11 @@ def _encode_features(
 def _season_driver_team_stats(race_data: pd.DataFrame, year: int):
     """Return lookup tables with driver and constructor statistics for ``year``."""
 
-    driver_stats_lookup = race_data.set_index(["DriverNumber", "Circuit"])[
-        ["DriverAvgTrackFinish", "DriverTrackPodiums", "DriverTrackDNFs"]
-    ]
+    needed = ["DriverAvgTrackFinish", "DriverTrackPodiums", "DriverTrackDNFs"]
+    for col in needed:
+        if col not in race_data.columns:
+            race_data[col] = np.nan
+    driver_stats_lookup = race_data.set_index(["DriverNumber", "Circuit"])[needed]
 
     year_data = race_data[race_data["Season"] == year]
     if not year_data.empty:

@@ -446,7 +446,12 @@ def _build_pred_df(
     driver_lookup = _load_driver_lookup()
     try:
         drivers_df = _get_qualifying_results(year, grand_prix)
-        drivers_df = drivers_df.join(driver_lookup, how="left")
+        drivers_df = drivers_df.join(driver_lookup, how="left", rsuffix="_lk")
+        if "DriverNumber_lk" in drivers_df.columns:
+            drivers_df["DriverNumber"] = drivers_df["DriverNumber"].fillna(
+                drivers_df["DriverNumber_lk"]
+            )
+            drivers_df = drivers_df.drop(columns=["DriverNumber_lk"])
         if drivers_df.empty or "DriverNumber" not in drivers_df.columns:
             raise ValueError("Geen valide DriverNumber in kwalificatiegegevens")
         drivers_df = drivers_df[drivers_df["BestTime"].notna()]
@@ -457,7 +462,12 @@ def _build_pred_df(
         )
         try:
             drivers_df = _get_event_drivers(year, grand_prix)
-            drivers_df = drivers_df.join(driver_lookup, how="left")
+            drivers_df = drivers_df.join(driver_lookup, how="left", rsuffix="_lk")
+            if "DriverNumber_lk" in drivers_df.columns:
+                drivers_df["DriverNumber"] = drivers_df["DriverNumber"].fillna(
+                    drivers_df["DriverNumber_lk"]
+                )
+                drivers_df = drivers_df.drop(columns=["DriverNumber_lk"])
             missing = drivers_df[drivers_df["DriverNumber"].isna()].index.tolist()
             if missing:
                 logger.warning("Kon geen DriverNumber vinden voor afkortingen: %s", missing)
@@ -474,7 +484,10 @@ def _build_pred_df(
         if "DriverNumber" not in fp3_results.columns or fp3_results["DriverNumber"].isna().all():
             raise ValueError("Geen valide DriverNumber in FP3-gegevens")
         if qual_results is not None:
-            qual_results = qual_results.join(fp3_results, how="left")
+            qual_results = qual_results.join(
+                fp3_results.drop(columns=["DriverNumber"], errors="ignore"),
+                how="left",
+            )
     except Exception as e:
         logger.warning("FP3 ophalen mislukt voor %d %s: %s", year, grand_prix, e)
         fp3_results = None
@@ -483,8 +496,14 @@ def _build_pred_df(
         sprint_results = _get_sprint_results(year, grand_prix)
         has_sprint = not sprint_results.empty
         if qual_results is not None:
-            qual_results = qual_results.join(sprint_results, how="left")
-        drivers_df = drivers_df.join(sprint_results, how="left")
+            qual_results = qual_results.join(
+                sprint_results.drop(columns=["DriverNumber"], errors="ignore"),
+                how="left",
+            )
+        drivers_df = drivers_df.join(
+            sprint_results.drop(columns=["DriverNumber"], errors="ignore"),
+            how="left",
+        )
     except Exception as e:
         logger.warning("Sprint ophalen mislukt voor %d %s: %s", year, grand_prix, e)
         sprint_results = pd.DataFrame()
